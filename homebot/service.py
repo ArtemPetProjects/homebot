@@ -9,7 +9,7 @@ from typing import Any, Callable
 from .config import Config
 from .devices import DeviceRegistry
 from .models import Answer, Ask, Event, PendingAsk
-from .network import scan_network
+from .network import ping_probe, scan_network
 from .store import Store
 from .telegram import (
     TelegramTransport,
@@ -32,6 +32,7 @@ class HomeBotService:
         devices: DeviceRegistry | None = None,
         arp_provider: Callable[[], str] | None = None,
         resolver: Callable[[str], str | None] | None = None,
+        probe_provider: Callable[[str], bool] | None = None,
     ):
         self.config = config
         self.store = store
@@ -40,6 +41,7 @@ class HomeBotService:
         self.devices = devices if devices is not None else DeviceRegistry(store.state_dir)
         self.arp_provider = arp_provider
         self.resolver = resolver
+        self.probe_provider = probe_provider
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
         self._seen_callbacks: set[str] = set()
@@ -291,9 +293,11 @@ class HomeBotService:
                 lines.append("Устройства не найдены")
             self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
             if unknown:
+                # Один активный вопрос про устройства: старые больше не висят в /status.
+                self.store.expire_active_source("device")
                 self.ask(
                     Ask(
-                        id="devices-" + str(int(self.clock())),
+                        id="devices-" + str(int(self.clock() * 1000)),
                         text="Подписать неизвестное устройство?",
                         options=("Подписать сейчас", "Пока нет", "Показать MAC"),
                         source="device",
@@ -328,6 +332,9 @@ class HomeBotService:
                 arp_provider=self.arp_provider,
                 resolver=self.resolver,
                 timeout=0.2,
+                probe=self.probe_provider
+                if self.probe_provider is not None
+                else (None if self.arp_provider is not None else ping_probe),
             )
         )
         self._devices_cache = (now, devices)

@@ -1,5 +1,8 @@
-# PURPOSE: чтение таблицы ARP для списка устройств домашней сети.
+# PURPOSE: чтение ARP и активный ping-обзор устройств домашней сети.
+import ipaddress
 import re
+import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Callable
 
@@ -19,13 +22,44 @@ class Device:
     source: str = "discovered"
 
 
-def _in_subnet(ip: str, subnet: str) -> bool:
-    prefix = subnet.rsplit("/", 1)[0].rsplit(".", 1)[0] + "."
-    return ip.startswith(prefix)
-
-
 def _normalize_mac(mac: str) -> str:
     return mac.replace("-", ":").lower()
+
+
+def _is_unicast_mac(mac: str) -> bool:
+    first = mac.replace(":", "-").split("-")[0]
+    try:
+        return not (int(first, 16) & 1)
+    except ValueError:
+        return False
+
+
+def _usable_ip(ip: str, network) -> bool:
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return (
+        address in network
+        and not address.is_multicast
+        and address != network.broadcast_address
+        and str(address) != "255.255.255.255"
+    )
+
+
+def ping_probe(ip: str, timeout: float = 0.2) -> bool:
+    """Проверить доступность адреса одним ICMP-пакетом, без изменения сети."""
+    try:
+        result = subprocess.run(
+            ["ping", "-n", "1", "-w", str(max(1, int(timeout * 1000))), ip],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout + 2,
+            check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def scan_network(
@@ -33,9 +67,9 @@ def scan_network(
     arp_provider: Callable[[], str] | None = None,
     resolver: Callable[[str], str | None] | None = None,
     timeout: float = 0.2,
+    probe: Callable[[str], bool] | None = None,
 ) -> list[Device]:
     if arp_provider is None:
-        import subprocess
 
         def arp_provider():  # noqa: F811
             result = subprocess.run(
@@ -52,18 +86,27 @@ def scan_network(
             except (OSError, UnicodeError):
                 return None
 
-    devices = []
-    seen = set()
+    network = ipaddress.ip_network(subnet, strict=False)
+    arp_rows: dict[str, str] = {}
     for line in arp_provider().splitlines():
         match = ARP_LINE.match(line)
         if not match:
             continue
         ip, mac, kind = match.groups()
-        if not _in_subnet(ip, subnet) or kind.lower() == "invalid":
-            continue
-        if ip in seen:
-            continue
-        seen.add(ip)
+        if _usable_ip(ip, network) and _is_unicast_mac(mac) and kind.lower() != "invalid":
+            arp_rows[ip] = mac
+
+    alive = set(arp_rows)
+    if probe is not None:
+        hosts = [str(host) for host in network.hosts()]
+        with ThreadPoolExecutor(max_workers=32) as pool:
+            results = list(pool.map(probe, hosts))
+        for ip, reachable in zip(hosts, results):
+            if reachable and _usable_ip(ip, network):
+                alive.add(ip)
+
+    devices = []
+    for ip in sorted(alive, key=lambda value: tuple(int(part) for part in value.split("."))):
         try:
             hostname = resolver(ip)
         except Exception:
@@ -71,6 +114,12 @@ def scan_network(
         if hostname and hostname.lower() == ip:
             hostname = None
         devices.append(
-            Device(ip=ip, mac=mac, hostname=hostname, alive=True, known=False)
+            Device(
+                ip=ip,
+                mac=arp_rows.get(ip, ""),
+                hostname=hostname,
+                alive=True,
+                known=False,
+            )
         )
     return devices

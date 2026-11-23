@@ -100,6 +100,17 @@ class Store:
         with self._lock:
             return [PendingAsk.from_dict(data) for data in self._read_pending().values()]
 
+    def expire_active_source(self, source: str) -> None:
+        with self._lock:
+            rows = self._read_pending()
+            changed = False
+            for data in rows.values():
+                if data.get("source") == source and not data.get("answered") and not data.get("expired"):
+                    data["expired"] = True
+                    changed = True
+            if changed:
+                self._write_pending(rows)
+
     def find_pending_by_token(self, token: str) -> PendingAsk | None:
         with self._lock:
             for data in self._read_pending().values():

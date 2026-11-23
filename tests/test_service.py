@@ -218,6 +218,16 @@ class ServiceTest(unittest.TestCase):
         self.enabled.handle_command({"text": "/label 192.168.1.50 Xbox", "chat": {"id": 42}})
         self.assertEqual(self.registry.known("192.168.1.50").label, "Xbox")
 
+    def test_devices_replaces_previous_device_ask(self):
+        self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
+        self.now[0] += 5
+        self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
+        active = [
+            pending for pending in self.store.all_pending()
+            if pending.source == "device" and not pending.answered and not pending.expired
+        ]
+        self.assertEqual(len(active), 1)
+
     def test_button_whats_next_is_recognized(self):
         self.enabled.handle_command({"text": "Что дальше", "chat": {"id": 42}})
         self.assertEqual(len(self.transport.sent), 1)
