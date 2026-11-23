@@ -5,6 +5,12 @@ from pathlib import Path
 
 from homebot.config import Config
 from homebot.devices import DeviceRegistry
+
+ARP_SAMPLE = """Interface: 192.168.1.13 --- 0x8
+  Internet Address      Physical Address      Type
+  192.168.1.1           00-11-22-33-44-55     dynamic
+  192.168.1.77          aa-bb-cc-dd-ee-ff     dynamic
+"""
 from homebot.models import Ask, Event
 from homebot.service import HomeBotService
 from homebot.store import Store
@@ -33,11 +39,14 @@ class ServiceTest(unittest.TestCase):
         self.store = Store(self.state, clock=self.clock)
         self.registry = DeviceRegistry(self.state, clock=self.clock)
         self.transport = FakeTelegramTransport()
+        providers = {"arp_provider": lambda: ARP_SAMPLE, "resolver": lambda ip: None}
         self.service = HomeBotService(
-            _config(False), self.store, self.transport, self.clock, devices=self.registry
+            _config(False), self.store, self.transport, self.clock,
+            devices=self.registry, **providers
         )
         self.enabled = HomeBotService(
-            _config(True), self.store, self.transport, self.clock, devices=self.registry
+            _config(True), self.store, self.transport, self.clock,
+            devices=self.registry, **providers
         )
 
     def tearDown(self):
@@ -208,6 +217,17 @@ class ServiceTest(unittest.TestCase):
         self.registry.remember("192.168.1.50", "aa:bb:cc:dd:ee:ff", "", "discovered")
         self.enabled.handle_command({"text": "/label 192.168.1.50 Xbox", "chat": {"id": 42}})
         self.assertEqual(self.registry.known("192.168.1.50").label, "Xbox")
+
+    def test_button_whats_next_is_recognized(self):
+        self.enabled.handle_command({"text": "Что дальше", "chat": {"id": 42}})
+        self.assertEqual(len(self.transport.sent), 1)
+        self.assertIn("Нет ожидающих", self.transport.sent[0]["text"])
+
+    def test_devices_uses_injected_arp_provider(self):
+        self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
+        text = self.transport.sent[0]["text"]
+        self.assertIn("192.168.1.77", text)
+        self.assertIn("Неизвестные", text)
 
     def test_callback_sends_confirmation_in_chat(self):
         data = self._ask_and_data("q1")

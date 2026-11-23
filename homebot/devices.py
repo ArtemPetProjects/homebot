@@ -44,6 +44,25 @@ class DeviceRegistry:
         self.clock = clock
         self._lock = threading.RLock()
         self._rows = self._read()
+        self._seed_defaults()
+
+    def _seed_defaults(self) -> None:
+        defaults = [
+            ("192.168.1.1", "Роутер"),
+            ("192.168.1.2", "Телевизор"),
+            ("192.168.1.13", "Этот ПК (не подтверждено пользователем)"),
+        ]
+        changed = False
+        for ip, label in defaults:
+            if any(DeviceInfo.from_dict(row).ip == ip for row in self._rows.values()):
+                continue
+            key = "ip:" + ip
+            self._rows[key] = DeviceInfo(
+                ip=ip, mac="", label=label, source="config", updated_at=0
+            ).to_dict()
+            changed = True
+        if changed:
+            self._write()
 
     def _read(self) -> dict[str, dict]:
         if not self.path.exists():

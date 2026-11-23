@@ -15,6 +15,18 @@ class DevicesTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_config_defaults_seeded(self):
+        router = self.registry.known("192.168.1.1")
+        self.assertEqual(router.label, "Роутер")
+        self.assertEqual(router.source, "config")
+        tv = self.registry.known("192.168.1.2")
+        self.assertEqual(tv.label, "Телевизор")
+        self.assertIn("не подтверждено", self.registry.known("192.168.1.13").label)
+
+    def test_user_label_overrides_seeded_config(self):
+        self.registry.remember("192.168.1.1", "aa:bb:cc:dd:ee:ff", "Мой роутер", "user")
+        self.assertEqual(self.registry.known("192.168.1.1").label, "Мой роутер")
+
     def test_remember_and_reload(self):
         self.registry.remember("192.168.1.9", "aa:bb:cc:dd:ee:ff", "Телефон", "user")
         reloaded = DeviceRegistry(self.state, clock=lambda: 1000.0)

@@ -30,12 +30,16 @@ class HomeBotService:
         transport: TelegramTransport,
         clock: Callable[[], float],
         devices: DeviceRegistry | None = None,
+        arp_provider: Callable[[], str] | None = None,
+        resolver: Callable[[str], str | None] | None = None,
     ):
         self.config = config
         self.store = store
         self.transport = transport
         self.clock = clock
         self.devices = devices if devices is not None else DeviceRegistry(store.state_dir)
+        self.arp_provider = arp_provider
+        self.resolver = resolver
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
         self._seen_callbacks: set[str] = set()
@@ -223,17 +227,20 @@ class HomeBotService:
                     logger.warning("Не удалось убрать кнопки: %s", type(exc).__name__)
 
     def handle_command(self, message: dict[str, Any]) -> None:
-        parts = str(message.get("text", "")).split()
+        text = str(message.get("text", "")).strip()
+        parts = text.split()
         if not parts:
             return
-        command = parts[0].split("@")[0]
         aliases = {
             "Устройства": "/devices",
             "Что дальше": "/nextdown",
             "Статус": "/status",
             "Помощь": "/help",
         }
-        command = aliases.get(command, command)
+        if text in aliases:
+            command = aliases[text]
+        else:
+            command = aliases.get(parts[0].split("@")[0], parts[0].split("@")[0])
         chat = message.get("chat") or {}
         chat_id = chat.get("id")
         # Команды принимаем только из настроенного чата.
@@ -316,7 +323,12 @@ class HomeBotService:
         if self._devices_cache and now - self._devices_cache[0] < 30:
             return self._devices_cache[1]
         devices = self.devices.with_labels(
-            scan_network(self.config.network_subnet, timeout=0.2)
+            scan_network(
+                self.config.network_subnet,
+                arp_provider=self.arp_provider,
+                resolver=self.resolver,
+                timeout=0.2,
+            )
         )
         self._devices_cache = (now, devices)
         return devices
