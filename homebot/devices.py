@@ -79,6 +79,11 @@ class DeviceRegistry:
             existing = self._rows.get(key)
             if existing and DeviceInfo.from_dict(existing).source == "user" and source != "user":
                 return DeviceInfo.from_dict(existing)
+            # Одна запись на IP: старая запись с другим MAC не должна затенять новую подпись.
+            stale = [row_key for row_key, row in self._rows.items()
+                     if row_key != key and DeviceInfo.from_dict(row).ip == ip]
+            for row_key in stale:
+                del self._rows[row_key]
             self._rows[key] = info.to_dict()
             self._write()
             return info

@@ -124,7 +124,7 @@ def make_server(
             if not self._authorized():
                 return
             parsed = urlparse(self.path)
-            if parsed.path not in ("/notify", "/ask"):
+            if parsed.path not in ("/notify", "/ask", "/handoff"):
                 self._send(404, {"ok": False, "error": "Неизвестный маршрут"})
                 return
             try:
@@ -147,6 +147,8 @@ def make_server(
                     )
                     event.validate()
                     self._send(200, service.notify(event))
+                elif parsed.path == "/handoff":
+                    self._send(200, service.handoff(body))
                 else:
                     options = body.get("options")
                     request = Ask(

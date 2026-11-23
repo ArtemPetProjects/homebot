@@ -110,6 +110,21 @@ class BridgeTest(unittest.TestCase):
         )
         self.assertEqual(status, 400)
 
+    def test_handoff_endpoint(self):
+        status, body = self._request(
+            "POST",
+            "/handoff",
+            {
+                "summary": "Готово",
+                "question": "Что дальше?",
+                "options": ["Продолжить", "Пауза"],
+                "task_id": "hbridge",
+            },
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["ask_id"], "handoff:hbridge")
+
     def test_answers_since_returns_answers(self):
         self.service.ask(Ask("q1", "Продолжить?", ("Да", "Нет")))
         status, body = self._request("GET", "/answers?since=0")

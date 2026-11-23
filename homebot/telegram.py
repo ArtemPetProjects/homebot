@@ -65,6 +65,21 @@ def build_inline_keyboard(pending: PendingAsk) -> dict[str, Any]:
     return {"inline_keyboard": rows}
 
 
+def build_main_keyboard() -> dict[str, Any]:
+    # Постоянные кнопки: пользователь открывает бот и сразу видит действия.
+    return {
+        "keyboard": [
+            [
+                {"text": "Устройства"},
+                {"text": "Что дальше"},
+                {"text": "Статус"},
+                {"text": "Помощь"},
+            ]
+        ],
+        "resize_keyboard": True,
+    }
+
+
 def format_notification(event: Event) -> str:
     labels = {
         "started": "▶️ Начато",

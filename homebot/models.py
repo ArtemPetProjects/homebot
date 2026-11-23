@@ -23,6 +23,7 @@ class Ask:
     id: str
     text: str
     options: tuple[str, ...]
+    source: str = "agent"
 
     def validate(self) -> None:
         if not self.id or not self.text:
@@ -76,6 +77,7 @@ class PendingAsk:
     chat_id: int | None = None
     answered: bool = False
     expired: bool = False
+    source: str = "agent"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +90,7 @@ class PendingAsk:
             "chat_id": self.chat_id,
             "answered": self.answered,
             "expired": self.expired,
+            "source": self.source,
         }
 
     @classmethod
@@ -102,4 +105,5 @@ class PendingAsk:
             chat_id=data.get("chat_id"),
             answered=bool(data.get("answered", False)),
             expired=bool(data.get("expired", False)),
+            source=str(data.get("source", "agent")),
         )

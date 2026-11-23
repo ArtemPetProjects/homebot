@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from homebot.config import Config
+from homebot.devices import DeviceRegistry
 from homebot.models import Ask, Event
 from homebot.service import HomeBotService
 from homebot.store import Store
@@ -30,10 +31,13 @@ class ServiceTest(unittest.TestCase):
         self.now = [1000.0]
         self.clock = lambda: self.now[0]
         self.store = Store(self.state, clock=self.clock)
+        self.registry = DeviceRegistry(self.state, clock=self.clock)
         self.transport = FakeTelegramTransport()
-        self.service = HomeBotService(_config(False), self.store, self.transport, self.clock)
+        self.service = HomeBotService(
+            _config(False), self.store, self.transport, self.clock, devices=self.registry
+        )
         self.enabled = HomeBotService(
-            _config(True), self.store, self.transport, self.clock
+            _config(True), self.store, self.transport, self.clock, devices=self.registry
         )
 
     def tearDown(self):
@@ -152,6 +156,69 @@ class ServiceTest(unittest.TestCase):
         result = fresh.notify(Event("info", "ещё раз", "dup"))
         self.assertEqual(result["queued"], 0)
         self.assertEqual(self.transport.sent, [])
+
+    def test_handoff_sends_notify_and_ask(self):
+        result = self.enabled.handoff(
+            {
+                "summary": "Готово",
+                "question": "Что дальше?",
+                "options": ["Продолжить", "Пауза"],
+                "task_id": "h1",
+            }
+        )
+        self.assertEqual(result["ask_id"], "handoff:h1")
+        self.assertGreaterEqual(len(self.transport.sent), 2)
+        self.assertEqual(self.transport.sent[-1]["reply_markup"]["inline_keyboard"][0][0]["text"], "Продолжить")
+        pending = self.store.get_pending("handoff:h1")
+        self.assertEqual(pending.source, "agent")
+
+    def test_handoff_idempotent(self):
+        body = {
+            "summary": "Готово",
+            "question": "Что дальше?",
+            "options": ["Продолжить", "Пауза"],
+            "task_id": "h2",
+        }
+        first = self.enabled.handoff(body)
+        count = len(self.transport.sent)
+        second = self.enabled.handoff(body)
+        self.assertEqual(second["ask_id"], first["ask_id"])
+        self.assertTrue(second["duplicate"])
+        self.assertEqual(len(self.transport.sent), count)
+
+    def test_keyboard_attached_to_replies(self):
+        self.enabled.handle_command({"text": "/ping", "chat": {"id": 42}})
+        markup = self.transport.sent[-1]["reply_markup"]
+        labels = [button["text"] for button in markup["keyboard"][0]]
+        self.assertEqual(labels, ["Устройства", "Что дальше", "Статус", "Помощь"])
+
+    def test_nextdown_ignores_device_asks(self):
+        self.enabled.ask(
+            Ask("agent-q", "Жду решения: что делать дальше?", ("Продолжить", "Пауза"))
+        )
+        self.enabled.ask(
+            Ask("device-q", "Что это за устройство?", ("Да", "Нет"), source="device")
+        )
+        before = len(self.transport.sent)
+        self.enabled.handle_command({"text": "/nextdown", "chat": {"id": 42}})
+        self.assertEqual(len(self.transport.sent), before + 1)
+        self.assertIn("Жду решения", self.transport.sent[-1]["text"])
+
+    def test_label_command_updates_registry(self):
+        self.registry.remember("192.168.1.50", "aa:bb:cc:dd:ee:ff", "", "discovered")
+        self.enabled.handle_command({"text": "/label 192.168.1.50 Xbox", "chat": {"id": 42}})
+        self.assertEqual(self.registry.known("192.168.1.50").label, "Xbox")
+
+    def test_callback_sends_confirmation_in_chat(self):
+        data = self._ask_and_data("q1")
+        before = len(self.transport.sent)
+        self.enabled.handle_callback(
+            {"id": "cb-confirm", "data": data, "message": {"message_id": 1, "chat": {"id": 42}}}
+        )
+        self.assertEqual(len(self.transport.sent), before + 1)
+        text = self.transport.sent[-1]["text"]
+        self.assertIn("Принято", text)
+        self.assertIn("Да", text)
 
     def test_answer_seq_is_monotonic(self):
         first = self._ask_and_data("q1")

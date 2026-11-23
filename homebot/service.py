@@ -7,11 +7,14 @@ from datetime import datetime
 from typing import Any, Callable
 
 from .config import Config
+from .devices import DeviceRegistry
 from .models import Answer, Ask, Event, PendingAsk
+from .network import scan_network
 from .store import Store
 from .telegram import (
     TelegramTransport,
     build_inline_keyboard,
+    build_main_keyboard,
     format_notification,
     parse_callback_data,
 )
@@ -26,14 +29,17 @@ class HomeBotService:
         store: Store,
         transport: TelegramTransport,
         clock: Callable[[], float],
+        devices: DeviceRegistry | None = None,
     ):
         self.config = config
         self.store = store
         self.transport = transport
         self.clock = clock
+        self.devices = devices if devices is not None else DeviceRegistry(store.state_dir)
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
         self._seen_callbacks: set[str] = set()
+        self._devices_cache: tuple[float, list] | None = None
 
     def _timestamp(self) -> str:
         return datetime.fromtimestamp(self.clock()).isoformat(timespec="seconds")
@@ -83,6 +89,7 @@ class HomeBotService:
                 options=request.options,
                 created_at=created,
                 token=token,
+                source=request.source,
             )
             self.store.save_pending(pending)
             record = {
@@ -120,6 +127,22 @@ class HomeBotService:
             self.store.append_outbox(record, dry=False)
             self.store.mark_delivered(record["event_id"])
             return {"ok": True, "delivered": True, "id": request.id}
+
+    def handoff(self, body: dict[str, Any]) -> dict[str, Any]:
+        task_id = str(body.get("task_id", ""))
+        summary = str(body.get("summary", ""))
+        question = str(body.get("question", ""))
+        raw_options = body.get("options")
+        options = tuple(str(item) for item in raw_options) if isinstance(raw_options, list) else ()
+        if not task_id or not summary or not question:
+            raise ValueError("task_id, summary и question обязательны")
+        ask_id = "handoff:" + task_id
+        current = self.store.get_pending(ask_id)
+        if current and not current.answered and not current.expired:
+            return {"ok": True, "ask_id": ask_id, "duplicate": True}
+        self.notify(Event(kind="waiting", text=summary + "\nЖду решения.", task_id=task_id))
+        self.ask(Ask(id=ask_id, text=question, options=options, source="agent"))
+        return {"ok": True, "ask_id": ask_id}
 
     def answers_since(self, since: int) -> dict[str, Any]:
         with self._lock:
@@ -180,6 +203,15 @@ class HomeBotService:
             self.store.mark_answered(pending.id)
             self.transport.answer_callback_query(callback_id)
             message = callback.get("message") or {}
+            # Пользователь должен видеть в чате, что его выбор принят.
+            reply_chat = (message.get("chat") or {}).get("id")
+            if reply_chat != self.config.chat_id:
+                reply_chat = self.config.chat_id
+            self.transport.send_message(
+                reply_chat,
+                f"Принято: {option}\nНачинаю работать по вашему выбору.",
+                reply_markup=build_main_keyboard(),
+            )
             chat_id = (message.get("chat") or {}).get("id")
             message_id = message.get("message_id") or pending.message_id
             if chat_id == self.config.chat_id and message_id:
@@ -195,15 +227,32 @@ class HomeBotService:
         if not parts:
             return
         command = parts[0].split("@")[0]
+        aliases = {
+            "Устройства": "/devices",
+            "Что дальше": "/nextdown",
+            "Статус": "/status",
+            "Помощь": "/help",
+        }
+        command = aliases.get(command, command)
         chat = message.get("chat") or {}
         chat_id = chat.get("id")
         # Команды принимаем только из настроенного чата.
         if chat_id != self.config.chat_id:
             return
         if command == "/start":
-            reply = "Home bot готов. /help — список команд."
+            reply = "Home bot готов. Кнопки ниже — доступные действия."
         elif command == "/help":
-            reply = "/status — состояние, /ping — проверка связи."
+            reply = "/devices — устройства сети, /nextdown — вопрос агента, /status — состояние, /ping — связь."
+        elif command == "/info":
+            reply = (
+                "Команды бота:\n"
+                "/devices — устройства домашней сети\n"
+                "/label <ip> <имя> — подписать устройство\n"
+                "/nextdown — последний вопрос агента\n"
+                "/status — состояние\n"
+                "/help — краткий список\n"
+                "/ping — проверка связи"
+            )
         elif command == "/ping":
             reply = "pong"
         elif command == "/status":
@@ -213,9 +262,64 @@ class HomeBotService:
                 f"Ожидают: {status['pending']}, отвечены: {status['answered']}, "
                 f"просрочены: {status['expired']}"
             )
+        elif command == "/label" and len(parts) >= 3:
+            ip = parts[1]
+            label = " ".join(parts[2:])
+            cached = {device.ip: device.mac for device in self._scan_devices()}
+            self.devices.remember(ip, cached.get(ip, ""), label, "user")
+            reply = f"Подпись сохранена: {ip} — {label}"
+        elif command == "/devices":
+            devices = self._scan_devices()
+            known = [device for device in devices if device.known]
+            unknown = [device for device in devices if not device.known]
+            lines = ["Устройства домашней сети:"]
+            for device in known:
+                lines.append(f"{device.label or device.hostname or 'Без имени'} — {device.ip}")
+            if unknown:
+                lines.append("")
+                lines.append("Неизвестные устройства:")
+                for device in unknown:
+                    lines.append(f"{device.ip} ({device.mac})")
+            if not devices:
+                lines.append("Устройства не найдены")
+            self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
+            if unknown:
+                self.ask(
+                    Ask(
+                        id="devices-" + str(int(self.clock())),
+                        text="Подписать неизвестное устройство?",
+                        options=("Подписать сейчас", "Пока нет", "Показать MAC"),
+                        source="device",
+                    )
+                )
+            return
+        elif command == "/nextdown":
+            active = [
+                pending
+                for pending in self.store.all_pending()
+                if pending.source == "agent" and not pending.answered and not pending.expired
+            ]
+            if not active:
+                reply = "Нет ожидающих вопросов агента."
+            else:
+                latest = max(active, key=lambda item: item.created_at)
+                self.transport.send_message(
+                    chat_id, latest.text, reply_markup=build_inline_keyboard(latest)
+                )
+                return
         else:
             return
-        self.transport.send_message(chat_id, reply)
+        self.transport.send_message(chat_id, reply, reply_markup=build_main_keyboard())
+
+    def _scan_devices(self) -> list:
+        now = self.clock()
+        if self._devices_cache and now - self._devices_cache[0] < 30:
+            return self._devices_cache[1]
+        devices = self.devices.with_labels(
+            scan_network(self.config.network_subnet, timeout=0.2)
+        )
+        self._devices_cache = (now, devices)
+        return devices
 
     def drain_outbox(self) -> None:
         with self._lock:
