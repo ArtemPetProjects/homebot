@@ -5,6 +5,7 @@ from pathlib import Path
 
 from homebot.config import Config
 from homebot.devices import DeviceRegistry
+from homebot.inbox import Inbox
 
 ARP_SAMPLE = """Interface: 192.168.1.13 --- 0x8
   Internet Address      Physical Address      Type
@@ -38,15 +39,16 @@ class ServiceTest(unittest.TestCase):
         self.clock = lambda: self.now[0]
         self.store = Store(self.state, clock=self.clock)
         self.registry = DeviceRegistry(self.state, clock=self.clock)
+        self.inbox = Inbox(self.state, clock=self.clock)
         self.transport = FakeTelegramTransport()
         providers = {"arp_provider": lambda: ARP_SAMPLE, "resolver": lambda ip: None}
         self.service = HomeBotService(
             _config(False), self.store, self.transport, self.clock,
-            devices=self.registry, **providers
+            devices=self.registry, inbox=self.inbox, **providers
         )
         self.enabled = HomeBotService(
             _config(True), self.store, self.transport, self.clock,
-            devices=self.registry, **providers
+            devices=self.registry, inbox=self.inbox, **providers
         )
 
     def tearDown(self):
@@ -233,6 +235,20 @@ class ServiceTest(unittest.TestCase):
         ]
         self.assertEqual(active, [])
         self.assertEqual(self.registry.known("192.168.1.77").label, "Устройство 77")
+
+    def test_send_to_agent_button_and_text(self):
+        self.enabled.handle_command({"text": "Отправить агенту", "chat": {"id": 42}})
+        self.assertIn("Напишите сообщение", self.transport.sent[-1]["text"])
+        self.enabled.handle_message({"text": "Идея на прогулке", "chat": {"id": 42}})
+        self.assertIn("Записано для агента", self.transport.sent[-1]["text"])
+        unread = self.inbox.unread()
+        self.assertEqual(len(unread), 1)
+        self.assertEqual(unread[0]["text"], "Идея на прогулке")
+
+    def test_keyboard_has_send_to_agent_button(self):
+        self.enabled.handle_command({"text": "/ping", "chat": {"id": 42}})
+        markup = self.transport.sent[-1]["reply_markup"]
+        self.assertIn("Отправить агенту", [b["text"] for b in markup["keyboard"][1]])
 
     def test_button_whats_next_is_recognized(self):
         self.enabled.handle_command({"text": "Что дальше", "chat": {"id": 42}})

@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from .config import Config
 from .devices import DeviceRegistry
+from .inbox import Inbox
 from .models import Answer, Ask, Event, PendingAsk
 from .network import ping_probe, scan_network
 from .store import Store
@@ -33,6 +34,7 @@ class HomeBotService:
         arp_provider: Callable[[], str] | None = None,
         resolver: Callable[[str], str | None] | None = None,
         probe_provider: Callable[[str], bool] | None = None,
+        inbox: Inbox | None = None,
     ):
         self.config = config
         self.store = store
@@ -42,6 +44,8 @@ class HomeBotService:
         self.arp_provider = arp_provider
         self.resolver = resolver
         self.probe_provider = probe_provider
+        self.inbox = inbox if inbox is not None else Inbox(store.state_dir)
+        self._awaiting_text: set[int] = set()
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
         self._seen_callbacks: set[str] = set()
@@ -228,6 +232,23 @@ class HomeBotService:
                 except Exception as exc:
                     logger.warning("Не удалось убрать кнопки: %s", type(exc).__name__)
 
+    def handle_message(self, message: dict[str, Any]) -> None:
+        text = str(message.get("text", "")).strip()
+        chat = message.get("chat") or {}
+        chat_id = chat.get("id")
+        if chat_id != self.config.chat_id or not text:
+            return
+        if text == "Отправить агенту":
+            self._awaiting_text.add(chat_id)
+            reply = "Напишите сообщение — я сразу покажу его здесь и сохраню для агента."
+        elif chat_id in self._awaiting_text:
+            record = self.inbox.add(text, chat_id)
+            self._awaiting_text.discard(chat_id)
+            reply = f"Записано для агента: {text}\n(id: {record['id']})"
+        else:
+            return
+        self.transport.send_message(chat_id, reply, reply_markup=build_main_keyboard())
+
     def handle_command(self, message: dict[str, Any]) -> None:
         text = str(message.get("text", "")).strip()
         parts = text.split()
@@ -317,6 +338,9 @@ class HomeBotService:
                     chat_id, latest.text, reply_markup=build_inline_keyboard(latest)
                 )
                 return
+        elif not command.startswith("/"):
+            self.handle_message(message)
+            return
         else:
             return
         self.transport.send_message(chat_id, reply, reply_markup=build_main_keyboard())

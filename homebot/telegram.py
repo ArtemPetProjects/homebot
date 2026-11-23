@@ -74,7 +74,8 @@ def build_main_keyboard() -> dict[str, Any]:
                 {"text": "Что дальше"},
                 {"text": "Статус"},
                 {"text": "Помощь"},
-            ]
+            ],
+            [{"text": "Отправить агенту"}],
         ],
         "resize_keyboard": True,
     }
