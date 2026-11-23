@@ -146,24 +146,32 @@ class DeviceRegistry:
         last_seen: float | None = None,
     ) -> DeviceInfo:
         key = _normalize_mac(mac) or f"ip:{ip}"
-        info = DeviceInfo(
-            ip=ip,
-            mac=key,
-            label=label,
-            source=source,
-            updated_at=self.clock(),
-            connected=connected,
-            last_seen=self.clock() if last_seen is None else last_seen,
-        )
         with self._lock:
             existing = self._rows.get(key)
             if existing and DeviceInfo.from_dict(existing).source == "user" and source != "user":
                 return DeviceInfo.from_dict(existing)
-            # Одна запись на IP: старая запись с другим MAC не должна затенять новую подпись.
-            stale = [row_key for row_key, row in self._rows.items()
-                     if row_key != key and DeviceInfo.from_dict(row).ip == ip]
-            for row_key in stale:
-                del self._rows[row_key]
+            old = DeviceInfo.from_dict(existing) if existing else None
+            # Роутер не сообщает IP офлайн-устройств — сохраняем уже известный адрес.
+            if not ip and old and old.ip:
+                ip = old.ip
+            # Пустой IP не должен удалять другие записи без адреса.
+            if ip:
+                stale = [row_key for row_key, row in self._rows.items()
+                         if row_key != key and DeviceInfo.from_dict(row).ip == ip]
+                for row_key in stale:
+                    del self._rows[row_key]
+            # Для офлайн-устройства без свежего времени берём последнее известное.
+            if not connected and not last_seen and old and old.last_seen:
+                last_seen = old.last_seen
+            info = DeviceInfo(
+                ip=ip,
+                mac=key,
+                label=label,
+                source=source,
+                updated_at=self.clock(),
+                connected=connected,
+                last_seen=self.clock() if last_seen is None else last_seen,
+            )
             self._rows[key] = info.to_dict()
             self._write()
             return info

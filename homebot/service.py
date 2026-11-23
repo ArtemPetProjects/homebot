@@ -10,7 +10,8 @@ from .config import Config
 from .devices import DeviceRegistry
 from .inbox import Inbox
 from .models import Answer, Ask, Event, PendingAsk
-from .network import raw_ping, scan_network
+from .network import Device, raw_ping, scan_network
+from .router import RouterClient
 from .store import Store
 from .telegram import (
     TelegramTransport,
@@ -35,6 +36,7 @@ class HomeBotService:
         resolver: Callable[[str], str | None] | None = None,
         probe_provider: Callable[[str], bool] | None = None,
         inbox: Inbox | None = None,
+        router_client=None,
     ):
         self.config = config
         self.store = store
@@ -45,6 +47,7 @@ class HomeBotService:
         self.resolver = resolver
         self.probe_provider = probe_provider
         self.inbox = inbox if inbox is not None else Inbox(store.state_dir)
+        self.router_client = router_client
         self._awaiting_text: set[int] = set()
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
@@ -322,11 +325,14 @@ class HomeBotService:
                 return "".join(ch for ch in value if ch.isalnum())
 
             def display_identifier(value: str) -> str:
-                if value.count(":") >= 2:
-                    return f"без IP (MAC {value})"
-                return value
+                # Роутер не отдаёт IP для офлайн-устройств; сырой MAC пользователю не показываем.
+                return "без IP" if value.count(":") >= 2 else value
 
             for device in scanned:
+                # Онлайн-устройства с IP идут первыми — их подпись и адрес приоритетнее.
+                key = label_key(device.label)
+                if key and key in label_keys:
+                    continue
                 identifier = device.ip or device.mac or "?"
                 rows.append(
                     (
@@ -339,8 +345,8 @@ class HomeBotService:
                 seen.add(identifier)
                 if device.mac:
                     seen.add(device.mac)
-                if device.label:
-                    label_keys.add(label_key(device.label))
+                if key:
+                    label_keys.add(key)
             # Устройства, которых сейчас нет в сети, берём из реестра роутера.
             for info in self.devices.all_devices():
                 identifier = info.ip or info.mac or "?"
@@ -393,18 +399,63 @@ class HomeBotService:
         now = self.clock()
         if self._devices_cache and now - self._devices_cache[0] < 30:
             return self._devices_cache[1]
-        scanned = scan_network(
-            self.config.network_subnet,
-            arp_provider=self.arp_provider,
-            resolver=self.resolver,
-            timeout=0.12,
-            probe=self.probe_provider
-            if self.probe_provider is not None
-            else (None if self.arp_provider is not None else raw_ping),
-        )
-        devices = self.devices.with_labels(scanned)
-        self.devices.observe(devices, now)
-        devices = self.devices.with_labels(devices)
+        router_devices = []
+        if self.config.router_login and self.config.router_password:
+            client = self.router_client or RouterClient(self.config)
+            try:
+                router_devices = client.devices()
+            except Exception as exc:
+                logger.warning("Не удалось получить устройства роутера: %s", type(exc).__name__)
+        if router_devices:
+            for item in router_devices:
+                known = self.devices.known(item.mac) or self.devices.known(item.ip)
+                label = (
+                    item.name
+                    or (f"Устройство {item.ip.rsplit('.', 1)[-1]}" if item.ip else "")
+                    or (known.label if known and known.label else "Без имени")
+                )
+                if item.online:
+                    last_seen = now
+                elif item.online_seconds:
+                    # Роутер хранит время последнего подключения, а не время опроса.
+                    last_seen = now - item.online_seconds
+                elif known and known.last_seen and known.last_seen < now - 60:
+                    last_seen = known.last_seen
+                else:
+                    last_seen = 0.0
+                self.devices.remember(
+                    item.ip, item.mac, label, "router",
+                    connected=item.online, last_seen=last_seen,
+                )
+            devices = [
+                Device(
+                    ip=info.ip,
+                    mac=info.mac,
+                    hostname=None,
+                    alive=info.connected,
+                    known=True,
+                    label=info.label,
+                    source=info.source,
+                    connected=info.connected,
+                    last_seen=info.last_seen,
+                )
+                for info in self.devices.all_devices()
+            ]
+        else:
+            scanned = scan_network(
+                self.config.network_subnet,
+                arp_provider=self.arp_provider,
+                resolver=self.resolver,
+                timeout=0.12,
+                probe=self.probe_provider
+                if self.probe_provider is not None
+                else (None if self.arp_provider is not None else raw_ping),
+            )
+            devices = self.devices.with_labels(scanned)
+            self.devices.observe(devices, now)
+            devices = self.devices.with_labels(devices)
+        # Онлайн-устройства с адресом первыми: их подпись выигрывает при дедупликации.
+        devices.sort(key=lambda item: (not item.connected, not item.ip, item.label))
         self._devices_cache = (now, devices)
         return devices
 

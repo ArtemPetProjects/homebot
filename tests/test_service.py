@@ -6,6 +6,7 @@ from pathlib import Path
 from homebot.config import Config
 from homebot.devices import DeviceRegistry
 from homebot.inbox import Inbox
+from homebot.router import RouterDevice
 
 ARP_SAMPLE = """Interface: 192.168.1.13 --- 0x8
   Internet Address      Physical Address      Type
@@ -246,6 +247,50 @@ class ServiceTest(unittest.TestCase):
         unread = self.inbox.unread()
         self.assertEqual(len(unread), 1)
         self.assertEqual(unread[0]["text"], "Идея на прогулке")
+
+    def test_devices_from_router_replace_manual_scan(self):
+        class FakeRouter:
+            def devices(self):
+                return [
+                    RouterDevice("Android TV", "192.168.1.2", "78:53:33:4a:40:64", True, 100),
+                    RouterDevice("POCO X8 Pro Max", "192.168.1.17", "f2:84:0b:fa:e9:40", False, 300),
+                ]
+
+        cfg = _config(True)
+        object.__setattr__(cfg, "router_login", "admin")
+        object.__setattr__(cfg, "router_password", "pw")
+        service = HomeBotService(
+            cfg, self.store, self.transport, self.clock,
+            devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
+        )
+        service.handle_command({"text": "/devices", "chat": {"id": 42}})
+        text = self.transport.sent[-1]["text"]
+        self.assertIn("192.168.1.2 — Android TV", text)
+        self.assertIn("192.168.1.17 — POCO X8 Pro Max", text)
+        self.assertIn("оффлайн с:", text)
+
+    def test_devices_no_duplicate_labels_and_no_raw_mac(self):
+        class FakeRouter:
+            def devices(self):
+                return [
+                    RouterDevice("POCO X8 Pro Max", "192.168.1.17", "f2:84:0b:fa:e9:40", False, 300),
+                    RouterDevice("POCO X8 Pro Max", "", "76:23:fa:41:35:4a", False, 0),
+                    RouterDevice("", "", "ac:ba:c0:b4:a2:86", False, 0),
+                ]
+
+        cfg = _config(True)
+        object.__setattr__(cfg, "router_login", "admin")
+        object.__setattr__(cfg, "router_password", "pw")
+        service = HomeBotService(
+            cfg, self.store, self.transport, self.clock,
+            devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
+        )
+        service.handle_command({"text": "/devices", "chat": {"id": 42}})
+        text = self.transport.sent[-1]["text"]
+        self.assertEqual(text.count("POCO X8 Pro Max"), 1)
+        self.assertNotIn("76:23:fa:41:35:4a", text)
+        self.assertNotIn("ac:ba:c0:b4:a2:86", text)
+        self.assertIn("без IP", text)
 
     def test_keyboard_has_send_to_agent_button(self):
         self.enabled.handle_command({"text": "/ping", "chat": {"id": 42}})
