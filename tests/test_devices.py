@@ -25,6 +25,14 @@ class DevicesTest(unittest.TestCase):
         alice = self.registry.known("192.168.1.4")
         self.assertEqual(alice.label, "Алиса (Yandex Station Mini)")
 
+    def test_seed_migrates_old_auto_label(self):
+        self.registry.remember("192.168.1.4", "", "Устройство 4", "discovered")
+        reloaded = DeviceRegistry(self.state, clock=lambda: 1000.0)
+        self.assertEqual(
+            reloaded.known("192.168.1.4").label,
+            "Алиса (Yandex Station Mini)",
+        )
+
     def test_user_label_overrides_seeded_config(self):
         self.registry.remember("192.168.1.1", "aa:bb:cc:dd:ee:ff", "Мой роутер", "user")
         self.assertEqual(self.registry.known("192.168.1.1").label, "Мой роутер")

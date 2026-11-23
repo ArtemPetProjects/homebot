@@ -10,7 +10,7 @@ from .config import Config
 from .devices import DeviceRegistry
 from .inbox import Inbox
 from .models import Answer, Ask, Event, PendingAsk
-from .network import ping_probe, scan_network
+from .network import raw_ping, scan_network
 from .store import Store
 from .telegram import (
     TelegramTransport,
@@ -356,7 +356,7 @@ class HomeBotService:
             timeout=0.12,
             probe=self.probe_provider
             if self.probe_provider is not None
-            else (None if self.arp_provider is not None else ping_probe),
+            else (None if self.arp_provider is not None else raw_ping),
         )
         devices = self.devices.with_labels(scanned)
         self.devices.observe(devices, now)

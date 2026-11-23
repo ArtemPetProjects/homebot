@@ -73,19 +73,27 @@ class DeviceRegistry:
         changed = False
         for ip, mac, label, connected in defaults:
             known_mac = _normalize_mac(mac) if mac else ""
-            if any(
-                DeviceInfo.from_dict(row).ip == ip or
-                (known_mac and DeviceInfo.from_dict(row).mac == known_mac)
-                for row in self._rows.values()
-            ):
-                continue
             key = known_mac or ("ip:" + ip if ip else "mac:unknown")
+            existing_key = None
+            for row_key, row in self._rows.items():
+                info = DeviceInfo.from_dict(row)
+                if (ip and info.ip == ip) or (known_mac and info.mac == known_mac):
+                    existing_key = row_key
+                    break
+            existing = DeviceInfo.from_dict(self._rows[existing_key]) if existing_key else None
+            if existing and existing.source == "user":
+                # Пользовательскую подпись не перезаписываем.
+                continue
+            if existing and existing.label == label and existing.mac == known_mac:
+                continue
+            if existing_key and existing_key != key:
+                del self._rows[existing_key]
             self._rows[key] = DeviceInfo(
                 ip=ip,
                 mac=known_mac,
                 label=label,
                 source="config",
-                updated_at=0,
+                updated_at=now,
                 connected=connected,
                 last_seen=now if connected else 0.0,
             ).to_dict()
