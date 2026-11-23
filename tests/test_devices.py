@@ -25,6 +25,12 @@ class DevicesTest(unittest.TestCase):
         alice = self.registry.known("192.168.1.4")
         self.assertEqual(alice.label, "Алиса (Yandex Station Mini)")
 
+    def test_empty_mac_does_not_match_offline_row(self):
+        self.assertIsNone(self.registry.known(""))
+        device = Device(ip="192.168.1.4", mac="", hostname=None)
+        labeled = self.registry.with_labels([device])[0]
+        self.assertEqual(labeled.label, "Алиса (Yandex Station Mini)")
+
     def test_seed_migrates_old_auto_label(self):
         self.registry.remember("192.168.1.4", "", "Устройство 4", "discovered")
         reloaded = DeviceRegistry(self.state, clock=lambda: 1000.0)

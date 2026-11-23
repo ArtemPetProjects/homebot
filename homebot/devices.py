@@ -118,6 +118,8 @@ class DeviceRegistry:
         os.replace(tmp, self.path)
 
     def known(self, ip_or_mac: str) -> DeviceInfo | None:
+        if not ip_or_mac:
+            return None
         key = _normalize_mac(ip_or_mac)
         with self._lock:
             for data in self._rows.values():
@@ -193,7 +195,7 @@ class DeviceRegistry:
             result.append(
                 Device(
                     ip=device.ip,
-                    mac=device.mac,
+                    mac=info.mac or device.mac if info else device.mac,
                     hostname=device.hostname,
                     alive=device.alive,
                     known=info is not None,
