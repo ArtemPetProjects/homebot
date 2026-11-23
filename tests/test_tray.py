@@ -3,6 +3,8 @@ import threading
 import unittest
 from types import SimpleNamespace
 
+import homebot.tray as tray_module
+from homebot.config import Config
 from homebot.tray import FakeTrayApi, TrayController
 
 
@@ -41,6 +43,37 @@ class TrayTest(unittest.TestCase):
         text = controller.status_text()
         self.assertIn("вкл", text)
         self.assertIn("Ожидают: 3", text)
+
+    def test_run_tray_uses_injected_api(self):
+        api = FakeTrayApi()
+        fake_server = SimpleNamespace(
+            shutdown=lambda: None,
+            server_close=lambda: None,
+            serve_forever=lambda poll_interval=0.5: None,
+        )
+        fake_runtime = SimpleNamespace(
+            stop_event=threading.Event(),
+            server=fake_server,
+            service=SimpleNamespace(status=lambda: {"send_enabled": False, "pending": 0}),
+        )
+        original = tray_module.build_runtime
+        tray_module.build_runtime = lambda config: fake_runtime
+        try:
+            config = Config(
+                bot_token="123:TOKEN",
+                chat_id=42,
+                api_key="key",
+                host="127.0.0.1",
+                port=8765,
+                send_enabled=False,
+                poll_interval=1.0,
+                ask_ttl_minutes=30,
+            )
+            result = tray_module.run_tray(config, api=api)
+        finally:
+            tray_module.build_runtime = original
+        self.assertEqual(result, 0)
+        self.assertEqual(api.icons, ["HomeBot"])
 
     def test_exit_stops_runtime(self):
         api = FakeTrayApi()
