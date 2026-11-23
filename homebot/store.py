@@ -96,6 +96,10 @@ class Store:
             data = self._read_pending().get(id)
             return PendingAsk.from_dict(data) if data else None
 
+    def all_pending(self) -> list[PendingAsk]:
+        with self._lock:
+            return [PendingAsk.from_dict(data) for data in self._read_pending().values()]
+
     def find_pending_by_token(self, token: str) -> PendingAsk | None:
         with self._lock:
             for data in self._read_pending().values():
