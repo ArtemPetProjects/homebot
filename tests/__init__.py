@@ -1,0 +1,1 @@
+# PURPOSE: пакет тестов HomeBot.
