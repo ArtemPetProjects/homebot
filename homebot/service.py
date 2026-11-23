@@ -284,6 +284,15 @@ class HomeBotService:
             lines = ["Устройства домашней сети:"]
             for device in known:
                 lines.append(f"{device.label or device.hostname or 'Без имени'} — {device.ip}")
+                if device.connected:
+                    lines.append("  подключено сейчас")
+                elif device.last_seen:
+                    import datetime
+
+                    moment = datetime.datetime.fromtimestamp(device.last_seen).strftime("%d.%m %H:%M")
+                    lines.append(f"  последнее подключение: {moment}")
+                else:
+                    lines.append("  сейчас не подключено")
             if unknown:
                 lines.append("")
                 lines.append("Неизвестные устройства:")
@@ -316,17 +325,18 @@ class HomeBotService:
         now = self.clock()
         if self._devices_cache and now - self._devices_cache[0] < 30:
             return self._devices_cache[1]
-        devices = self.devices.with_labels(
-            scan_network(
-                self.config.network_subnet,
-                arp_provider=self.arp_provider,
-                resolver=self.resolver,
-                timeout=0.12,
-                probe=self.probe_provider
-                if self.probe_provider is not None
-                else (None if self.arp_provider is not None else ping_probe),
-            )
+        scanned = scan_network(
+            self.config.network_subnet,
+            arp_provider=self.arp_provider,
+            resolver=self.resolver,
+            timeout=0.12,
+            probe=self.probe_provider
+            if self.probe_provider is not None
+            else (None if self.arp_provider is not None else ping_probe),
         )
+        devices = self.devices.with_labels(scanned)
+        self.devices.observe(devices, now)
+        devices = self.devices.with_labels(devices)
         self._devices_cache = (now, devices)
         return devices
 

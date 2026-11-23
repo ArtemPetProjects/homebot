@@ -218,6 +218,11 @@ class ServiceTest(unittest.TestCase):
         self.enabled.handle_command({"text": "/label 192.168.1.50 Xbox", "chat": {"id": 42}})
         self.assertEqual(self.registry.known("192.168.1.50").label, "Xbox")
 
+    def test_devices_shows_connection_status(self):
+        self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
+        text = self.transport.sent[0]["text"]
+        self.assertIn("подключено сейчас", text)
+
     def test_devices_does_not_ask_user_to_label(self):
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
         self.now[0] += 5

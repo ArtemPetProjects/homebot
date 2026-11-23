@@ -20,6 +20,8 @@ class Device:
     known: bool = False
     label: str = ""
     source: str = "discovered"
+    connected: bool = True
+    last_seen: float = 0.0
 
 
 def _normalize_mac(mac: str) -> str:

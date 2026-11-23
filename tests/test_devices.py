@@ -20,8 +20,10 @@ class DevicesTest(unittest.TestCase):
         self.assertEqual(router.label, "Роутер")
         self.assertEqual(router.source, "config")
         tv = self.registry.known("192.168.1.2")
-        self.assertEqual(tv.label, "Телевизор")
-        self.assertIn("не подтверждено", self.registry.known("192.168.1.13").label)
+        self.assertEqual(tv.label, "Android-TV")
+        self.assertEqual(self.registry.known("192.168.1.13").label, "VelesCorp")
+        alice = self.registry.known("192.168.1.4")
+        self.assertEqual(alice.label, "Алиса (Yandex Station Mini)")
 
     def test_user_label_overrides_seeded_config(self):
         self.registry.remember("192.168.1.1", "aa:bb:cc:dd:ee:ff", "Мой роутер", "user")
