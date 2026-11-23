@@ -31,6 +31,17 @@ def validate_auth(headers: Mapping[str, str], api_key: str) -> bool:
     return hmac.compare_digest(str(supplied), api_key)
 
 
+def _drain_body(handler: BaseHTTPRequestHandler, length: int) -> None:
+    # Тело надо дочитать до ответа, иначе ОС сбросит соединение (RST) и клиент
+    # не увидит корректный статус 413. Читаем порциями, без большого выделения памяти.
+    remaining = min(length, 4 * 1024 * 1024)
+    while remaining > 0:
+        chunk = handler.rfile.read(min(8192, remaining))
+        if not chunk:
+            break
+        remaining -= len(chunk)
+
+
 def read_json_body(handler: BaseHTTPRequestHandler, max_bytes: int = MAX_BODY_BYTES) -> dict | None:
     raw_length = handler.headers.get("Content-Length")
     if raw_length is None:
@@ -40,9 +51,11 @@ def read_json_body(handler: BaseHTTPRequestHandler, max_bytes: int = MAX_BODY_BY
     except ValueError:
         return None
     if length > max_bytes:
+        _drain_body(handler, length)
         raise BodyTooLarge()
     content_type = handler.headers.get("Content-Type", "")
     if "application/json" not in content_type:
+        _drain_body(handler, length)
         raise WrongContentType()
     raw = handler.rfile.read(length)
     try:
