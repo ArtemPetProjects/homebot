@@ -124,7 +124,7 @@ def make_server(
             if not self._authorized():
                 return
             parsed = urlparse(self.path)
-            if parsed.path not in ("/notify", "/ask", "/handoff"):
+            if parsed.path not in ("/notify", "/ask", "/handoff", "/inbox/import"):
                 self._send(404, {"ok": False, "error": "Неизвестный маршрут"})
                 return
             try:
@@ -149,6 +149,12 @@ def make_server(
                     self._send(200, service.notify(event))
                 elif parsed.path == "/handoff":
                     self._send(200, service.handoff(body))
+                elif parsed.path == "/inbox/import":
+                    messages = body.get("messages")
+                    if not isinstance(messages, list):
+                        self._send(400, {"ok": False, "error": "messages должен быть списком"})
+                        return
+                    self._send(200, service.import_inbox(messages))
                 else:
                     options = body.get("options")
                     request = Ask(

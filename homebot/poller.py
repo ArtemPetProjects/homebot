@@ -1,7 +1,7 @@
 # PURPOSE: опрос Telegram, фильтрация чужого чата и сохранение смещения.
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from .config import Config
 from .service import HomeBotService
@@ -19,7 +19,9 @@ class Poller:
         store: Store,
         config: Config,
         stop_event: threading.Event,
+        enabled: Callable[[], bool] | None = None,
     ):
+        self.enabled = enabled if enabled is not None else (lambda: True)
         self.service = service
         self.transport = transport
         self.store = store
@@ -52,8 +54,8 @@ class Poller:
 
     def run(self) -> None:
         while not self.stop_event.is_set():
-            if not self.config.send_enabled:
-                # В dry-run не обращаемся к Telegram вообще.
+            if not self.config.send_enabled or not self.enabled():
+                # В dry-run и в режиме ожидания не обращаемся к Telegram.
                 self.stop_event.wait(self.config.poll_interval)
                 continue
             try:

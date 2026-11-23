@@ -13,6 +13,7 @@ from .config import Config, load_config
 from .poller import Poller
 from .service import HomeBotService
 from .store import Store
+from .supervisor import run_supervisor
 from .telegram import FakeTelegramTransport, HttpTelegramTransport, TelegramTransport
 
 logger = logging.getLogger("homebot")
@@ -90,8 +91,26 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, handle_stop)
     signal.signal(signal.SIGTERM, handle_stop)
 
+    standby_state = {"active": False}
+    if config.standby_pc_url:
+        runtime.poller = Poller(
+            runtime.service,
+            runtime.transport,
+            runtime.store,
+            config,
+            runtime.stop_event,
+            enabled=lambda: standby_state["active"],
+        )
     poller_thread = threading.Thread(target=runtime.poller.run, daemon=True)
     poller_thread.start()
+    supervisor_thread = None
+    if config.standby_pc_url:
+        supervisor_thread = threading.Thread(
+            target=run_supervisor,
+            args=(config, runtime.service, runtime.stop_event, standby_state),
+            daemon=True,
+        )
+        supervisor_thread.start()
     logger.info(
         "Home bot запущен: %s:%s, отправка %s",
         config.host,
@@ -104,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
         runtime.stop_event.set()
         runtime.server.server_close()
         poller_thread.join(timeout=5)
+        if supervisor_thread is not None:
+            supervisor_thread.join(timeout=5)
         logger.info("Home bot остановлен")
     return 0
 

@@ -154,6 +154,17 @@ class HomeBotService:
         self.ask(Ask(id=ask_id, text=question, options=options, source="agent"))
         return {"ok": True, "ask_id": ask_id}
 
+    def import_inbox(self, messages: list[dict[str, Any]]) -> dict[str, Any]:
+        imported = 0
+        with self._lock:
+            for message in messages:
+                text = str(message.get("text", ""))
+                if not text:
+                    continue
+                self.inbox.add(text, int(message.get("chat_id", self.config.chat_id)))
+                imported += 1
+        return {"ok": True, "imported": imported}
+
     def answers_since(self, since: int) -> dict[str, Any]:
         with self._lock:
             return {"answers": [a.to_dict() for a in self.store.answers_since(since)]}
@@ -304,6 +315,11 @@ class HomeBotService:
             scanned = self._scan_devices()
             rows = []
             seen = set()
+            label_keys = set()
+
+            def label_key(value: str) -> str:
+                return "".join(ch for ch in value.lower() if ch.isalnum())
+
             for device in scanned:
                 identifier = device.ip or device.mac or "?"
                 rows.append(
@@ -317,12 +333,19 @@ class HomeBotService:
                 seen.add(identifier)
                 if device.mac:
                     seen.add(device.mac)
+                if device.label:
+                    label_keys.add(label_key(device.label))
             # Устройства, которых сейчас нет в сети, берём из реестра роутера.
             for info in self.devices.all_devices():
                 identifier = info.ip or info.mac or "?"
                 if identifier in seen or (info.ip and info.ip in seen) or (info.mac and info.mac in seen):
                     continue
+                # Одно и то же устройство может быть в реестре и с IP, и с MAC — не дублируем.
+                if info.label and label_key(info.label) in label_keys:
+                    continue
                 rows.append((identifier, info.label or "Без имени", info.connected, info.last_seen))
+                if info.label:
+                    label_keys.add(label_key(info.label))
             lines = ["Устройства домашней сети:"]
             if not rows:
                 lines.append("Устройства не найдены")

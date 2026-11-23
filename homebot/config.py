@@ -21,11 +21,14 @@ class Config:
     router_url: str = "http://192.168.1.1"
     router_login: str = ""
     router_password: str = ""
+    allow_lan: bool = False
+    standby_pc_url: str = ""
 
     def validate(self) -> None:
         # Порт открыт только на локальную петлю: это главная защита от доступа из сети.
         if self.host not in ("127.0.0.1", "localhost"):
-            raise ValueError("LOCAL_HOST должен быть 127.0.0.1 или localhost")
+            if not (self.allow_lan and self.host == "0.0.0.0"):
+                raise ValueError("LOCAL_HOST должен быть 127.0.0.1 или localhost")
         if not 1 <= self.port <= 65535:
             raise ValueError("LOCAL_PORT вне диапазона 1..65535")
         if self.chat_id <= 0:
@@ -84,6 +87,8 @@ def load_config(env_path: Path, environ: Mapping[str, str] | None = None) -> Con
         router_url=values.get("ROUTER_URL", "http://192.168.1.1"),
         router_login=values.get("ROUTER_LOGIN", ""),
         router_password=values.get("ROUTER_PASSWORD", ""),
+        allow_lan=values.get("ALLOW_LAN", "0") == "1",
+        standby_pc_url=values.get("STANDBY_PC_URL", ""),
     )
     config.validate()
     return config
