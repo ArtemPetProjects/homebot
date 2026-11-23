@@ -18,6 +18,9 @@ class Config:
     ask_ttl_minutes: int
     base_url: str = "https://api.telegram.org"
     network_subnet: str = "192.168.1.0/24"
+    router_url: str = "http://192.168.1.1"
+    router_login: str = ""
+    router_password: str = ""
 
     def validate(self) -> None:
         # Порт открыт только на локальную петлю: это главная защита от доступа из сети.
@@ -78,6 +81,9 @@ def load_config(env_path: Path, environ: Mapping[str, str] | None = None) -> Con
         poll_interval=float(values.get("POLL_INTERVAL_SECONDS", "1")),
         ask_ttl_minutes=number("ASK_TTL_MINUTES", "30"),
         network_subnet=values.get("NETWORK_SUBNET", "192.168.1.0/24"),
+        router_url=values.get("ROUTER_URL", "http://192.168.1.1"),
+        router_login=values.get("ROUTER_LOGIN", ""),
+        router_password=values.get("ROUTER_PASSWORD", ""),
     )
     config.validate()
     return config
