@@ -292,17 +292,7 @@ class HomeBotService:
             if not devices:
                 lines.append("Устройства не найдены")
             self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
-            if unknown:
-                # Один активный вопрос про устройства: старые больше не висят в /status.
-                self.store.expire_active_source("device")
-                self.ask(
-                    Ask(
-                        id="devices-" + str(int(self.clock() * 1000)),
-                        text="Подписать неизвестное устройство?",
-                        options=("Подписать сейчас", "Пока нет", "Показать MAC"),
-                        source="device",
-                    )
-                )
+            # Пользователя не спрашиваем: неизвестные устройства подписываются автоматически.
             return
         elif command == "/nextdown":
             active = [
@@ -331,7 +321,7 @@ class HomeBotService:
                 self.config.network_subnet,
                 arp_provider=self.arp_provider,
                 resolver=self.resolver,
-                timeout=0.2,
+                timeout=0.12,
                 probe=self.probe_provider
                 if self.probe_provider is not None
                 else (None if self.arp_provider is not None else ping_probe),

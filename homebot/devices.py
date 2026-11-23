@@ -111,10 +111,32 @@ class DeviceRegistry:
         with self._lock:
             return [DeviceInfo.from_dict(row) for row in self._rows.values()]
 
+    @staticmethod
+    def _auto_label(device: Device) -> str:
+        prefix = device.mac.replace("-", ":").upper()[:8]
+        vendors = {
+            "5C:94:62": "Xiaomi",
+            "78:53:33": "Xiaomi",
+            "FC:F5:C4": "Xiaomi",
+            "A4:83:E7": "Xiaomi",
+            "E4:5F:01": "Espressif",
+            "A0:CE:C8": "Espressif",
+            "3C:71:BF": "Amazon",
+            "B8:27:EB": "Raspberry Pi",
+            "DC:A6:32": "Raspberry Pi",
+        }
+        vendor = next((name for mac_prefix, name in vendors.items() if prefix.startswith(mac_prefix)), None)
+        return f"Устройство {vendor}" if vendor else f"Устройство {device.ip.rsplit('.', 1)[-1]}"
+
     def with_labels(self, devices: list[Device]) -> list[Device]:
         result = []
         for device in devices:
             info = self.known(device.mac) or self.known(device.ip)
+            if info is None:
+                # Неизвестное устройство подписываем сами — пользователь не должен искать IP.
+                info = self.remember(
+                    device.ip, device.mac, self._auto_label(device), "discovered"
+                )
             result.append(
                 Device(
                     ip=device.ip,

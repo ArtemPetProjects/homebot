@@ -1,0 +1,48 @@
+# PURPOSE: прочитать только новые ответы из HomeBot, включая данные до вопроса.
+import json
+import sys
+import urllib.request
+from pathlib import Path
+
+ROOT = Path(r"E:\Projects\HomeBot")
+sys.path.insert(0, str(ROOT))
+
+from homebot.config import load_config  # noqa: E402
+
+cfg = load_config(ROOT / ".env")
+cursor_path = ROOT / "state" / "agent_cursor.json"
+try:
+    last_seq = int(json.loads(cursor_path.read_text(encoding="utf-8")).get("last_seq", 0))
+except (OSError, ValueError, json.JSONDecodeError):
+    last_seq = 0
+
+request = urllib.request.Request(
+    f"http://{cfg.host}:{cfg.port}/answers?since={last_seq}",
+    headers={"X-HomeBot-Key": cfg.api_key},
+    method="GET",
+)
+with urllib.request.urlopen(request, timeout=10) as response:
+    answers = json.loads(response.read().decode("utf-8")).get("answers", [])
+
+for answer in answers:
+    print(
+        json.dumps(
+            {
+                "id": answer.get("id"),
+                "seq": answer.get("seq"),
+                "option": answer.get("option", "").encode("unicode_escape").decode("ascii"),
+                "ts": answer.get("ts"),
+                "reason": answer.get("reason"),
+            },
+            ensure_ascii=True,
+        )
+    )
+
+if answers:
+    cursor_path.parent.mkdir(parents=True, exist_ok=True)
+    cursor_path.write_text(
+        json.dumps({"last_seq": max(int(a["seq"]) for a in answers)}) + "\n",
+        encoding="utf-8",
+    )
+else:
+    print("NO_NEW_ANSWERS")

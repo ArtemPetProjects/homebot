@@ -40,9 +40,12 @@ class DevicesTest(unittest.TestCase):
         self.assertIsNone(self.registry.known("192.168.1.9"))
         self.assertEqual(self.registry.known("192.168.1.10").label, "Телефон")
 
-    def test_unknown_devices_marked(self):
+    def test_unknown_devices_get_auto_label(self):
         device = Device(ip="192.168.1.50", mac="11:22:33:44:55:66", hostname=None)
-        self.assertEqual(self.registry.unknowns([device]), [device])
+        labeled = self.registry.with_labels([device])
+        self.assertEqual(self.registry.unknowns([device]), [])
+        self.assertEqual(labeled[0].label, "Устройство 50")
+        self.assertEqual(labeled[0].known, True)
 
     def test_user_label_overrides_config(self):
         self.registry.remember("192.168.1.2", "aa:bb:cc:dd:ee:ff", "TV", "config")

@@ -47,6 +47,14 @@ def _usable_ip(ip: str, network) -> bool:
     )
 
 
+def _hidden_subprocess_kwargs() -> dict:
+    # Без этого каждый ping из pythonw показывает мигающее окно консоли.
+    startup = subprocess.STARTUPINFO()
+    startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup.wShowWindow = 0
+    return {"creationflags": 0x08000000, "startupinfo": startup}
+
+
 def ping_probe(ip: str, timeout: float = 0.2) -> bool:
     """Проверить доступность адреса одним ICMP-пакетом, без изменения сети."""
     try:
@@ -56,6 +64,7 @@ def ping_probe(ip: str, timeout: float = 0.2) -> bool:
             stderr=subprocess.DEVNULL,
             timeout=timeout + 2,
             check=False,
+            **_hidden_subprocess_kwargs(),
         )
         return result.returncode == 0
     except (OSError, subprocess.SubprocessError):
@@ -66,14 +75,15 @@ def scan_network(
     subnet: str,
     arp_provider: Callable[[], str] | None = None,
     resolver: Callable[[str], str | None] | None = None,
-    timeout: float = 0.2,
+    timeout: float = 0.12,
     probe: Callable[[str], bool] | None = None,
 ) -> list[Device]:
     if arp_provider is None:
 
         def arp_provider():  # noqa: F811
             result = subprocess.run(
-                ["arp", "-a"], capture_output=True, text=True, timeout=10, check=False
+                ["arp", "-a"], capture_output=True, text=True, timeout=10, check=False,
+                **_hidden_subprocess_kwargs(),
             )
             return result.stdout
 
@@ -87,23 +97,29 @@ def scan_network(
                 return None
 
     network = ipaddress.ip_network(subnet, strict=False)
-    arp_rows: dict[str, str] = {}
-    for line in arp_provider().splitlines():
-        match = ARP_LINE.match(line)
-        if not match:
-            continue
-        ip, mac, kind = match.groups()
-        if _usable_ip(ip, network) and _is_unicast_mac(mac) and kind.lower() != "invalid":
-            arp_rows[ip] = mac
 
+    def parse_arp() -> dict[str, str]:
+        rows: dict[str, str] = {}
+        for line in arp_provider().splitlines():
+            match = ARP_LINE.match(line)
+            if not match:
+                continue
+            ip, mac, kind = match.groups()
+            if _usable_ip(ip, network) and _is_unicast_mac(mac) and kind.lower() != "invalid":
+                rows[ip] = mac
+        return rows
+
+    arp_rows = parse_arp()
     alive = set(arp_rows)
     if probe is not None:
         hosts = [str(host) for host in network.hosts()]
-        with ThreadPoolExecutor(max_workers=32) as pool:
+        with ThreadPoolExecutor(max_workers=96) as pool:
             results = list(pool.map(probe, hosts))
         for ip, reachable in zip(hosts, results):
             if reachable and _usable_ip(ip, network):
                 alive.add(ip)
+        # Ping наполняет ARP-кэш — перечитываем его, чтобы узнать MAC новых устройств.
+        arp_rows = parse_arp()
 
     devices = []
     for ip in sorted(alive, key=lambda value: tuple(int(part) for part in value.split("."))):

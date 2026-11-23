@@ -218,7 +218,7 @@ class ServiceTest(unittest.TestCase):
         self.enabled.handle_command({"text": "/label 192.168.1.50 Xbox", "chat": {"id": 42}})
         self.assertEqual(self.registry.known("192.168.1.50").label, "Xbox")
 
-    def test_devices_replaces_previous_device_ask(self):
+    def test_devices_does_not_ask_user_to_label(self):
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
         self.now[0] += 5
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
@@ -226,7 +226,8 @@ class ServiceTest(unittest.TestCase):
             pending for pending in self.store.all_pending()
             if pending.source == "device" and not pending.answered and not pending.expired
         ]
-        self.assertEqual(len(active), 1)
+        self.assertEqual(active, [])
+        self.assertEqual(self.registry.known("192.168.1.77").label, "Устройство 77")
 
     def test_button_whats_next_is_recognized(self):
         self.enabled.handle_command({"text": "Что дальше", "chat": {"id": 42}})
@@ -237,7 +238,7 @@ class ServiceTest(unittest.TestCase):
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
         text = self.transport.sent[0]["text"]
         self.assertIn("192.168.1.77", text)
-        self.assertIn("Неизвестные", text)
+        self.assertIn("Устройство", text)
 
     def test_callback_sends_confirmation_in_chat(self):
         data = self._ask_and_data("q1")
