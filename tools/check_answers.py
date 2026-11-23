@@ -16,8 +16,9 @@ try:
 except (OSError, ValueError, json.JSONDecodeError):
     last_seq = 0
 
+api_host = "127.0.0.1" if cfg.host == "0.0.0.0" else cfg.host
 request = urllib.request.Request(
-    f"http://{cfg.host}:{cfg.port}/answers?since={last_seq}",
+    f"http://{api_host}:{cfg.port}/answers?since={last_seq}",
     headers={"X-HomeBot-Key": cfg.api_key},
     method="GET",
 )

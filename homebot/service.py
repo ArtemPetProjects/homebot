@@ -355,7 +355,7 @@ class HomeBotService:
                     lines.append("онлайн")
                 elif last_seen:
                     moment = datetime.datetime.fromtimestamp(last_seen).strftime("%d.%m.%Y %H:%M")
-                    lines.append(f"оффлайн, последний раз: {moment}")
+                    lines.append(f"оффлайн с: {moment}")
                 else:
                     lines.append("оффлайн, время последнего подключения неизвестно")
             self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())

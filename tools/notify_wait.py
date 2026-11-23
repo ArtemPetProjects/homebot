@@ -17,7 +17,8 @@ if len(sys.argv) < 4:
 task_id, text, *options = sys.argv[1:]
 cfg = load_config(ROOT / ".env")
 headers = {"X-HomeBot-Key": cfg.api_key, "Content-Type": "application/json"}
-base = f"http://{cfg.host}:{cfg.port}"
+api_host = "127.0.0.1" if cfg.host == "0.0.0.0" else cfg.host
+base = f"http://{api_host}:{cfg.port}"
 
 
 def call(path, body):
