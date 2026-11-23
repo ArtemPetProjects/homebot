@@ -299,30 +299,43 @@ class HomeBotService:
             self.devices.remember(ip, cached.get(ip, ""), label, "user")
             reply = f"Подпись сохранена: {ip} — {label}"
         elif command == "/devices":
-            devices = self._scan_devices()
-            known = [device for device in devices if device.known]
-            unknown = [device for device in devices if not device.known]
-            lines = ["Устройства домашней сети:"]
-            for device in known:
-                lines.append(f"{device.label or device.hostname or 'Без имени'} — {device.ip}")
-                if device.connected:
-                    lines.append("  подключено сейчас")
-                elif device.last_seen:
-                    import datetime
+            import datetime
 
-                    moment = datetime.datetime.fromtimestamp(device.last_seen).strftime("%d.%m %H:%M")
-                    lines.append(f"  последнее подключение: {moment}")
-                else:
-                    lines.append("  сейчас не подключено")
-            if unknown:
-                lines.append("")
-                lines.append("Неизвестные устройства:")
-                for device in unknown:
-                    lines.append(f"{device.ip} ({device.mac})")
-            if not devices:
+            scanned = self._scan_devices()
+            rows = []
+            seen = set()
+            for device in scanned:
+                identifier = device.ip or device.mac or "?"
+                rows.append(
+                    (
+                        identifier,
+                        device.label or device.hostname or "Без имени",
+                        device.connected,
+                        device.last_seen,
+                    )
+                )
+                seen.add(identifier)
+                if device.mac:
+                    seen.add(device.mac)
+            # Устройства, которых сейчас нет в сети, берём из реестра роутера.
+            for info in self.devices.all_devices():
+                identifier = info.ip or info.mac or "?"
+                if identifier in seen or (info.ip and info.ip in seen) or (info.mac and info.mac in seen):
+                    continue
+                rows.append((identifier, info.label or "Без имени", info.connected, info.last_seen))
+            lines = ["Устройства домашней сети:"]
+            if not rows:
                 lines.append("Устройства не найдены")
+            for identifier, label, connected, last_seen in rows:
+                lines.append(f"{identifier} — {label}")
+                if connected:
+                    lines.append("онлайн")
+                elif last_seen:
+                    moment = datetime.datetime.fromtimestamp(last_seen).strftime("%d.%m.%Y %H:%M")
+                    lines.append(f"оффлайн, последний раз: {moment}")
+                else:
+                    lines.append("оффлайн, время последнего подключения неизвестно")
             self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
-            # Пользователя не спрашиваем: неизвестные устройства подписываются автоматически.
             return
         elif command == "/nextdown":
             active = [

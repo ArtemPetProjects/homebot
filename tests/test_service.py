@@ -223,7 +223,9 @@ class ServiceTest(unittest.TestCase):
     def test_devices_shows_connection_status(self):
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
         text = self.transport.sent[0]["text"]
-        self.assertIn("подключено сейчас", text)
+        self.assertIn("онлайн", text)
+        self.assertIn("оффлайн", text)
+        self.assertIn("последний раз", text)
 
     def test_devices_does_not_ask_user_to_label(self):
         self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})

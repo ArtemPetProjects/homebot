@@ -70,6 +70,9 @@ class DeviceRegistry:
             ("", "ac:ba:c0:b4:a2:86", "Устройство AC:BA", False),
         ]
         now = self.clock()
+        import datetime
+
+        router_snapshot = datetime.datetime(2026, 11, 23, 13, 41).timestamp()
         changed = False
         for ip, mac, label, connected in defaults:
             known_mac = _normalize_mac(mac) if mac else ""
@@ -85,6 +88,9 @@ class DeviceRegistry:
                 # Пользовательскую подпись не перезаписываем.
                 continue
             if existing and existing.label == label and existing.mac == known_mac:
+                if not connected and not existing.last_seen:
+                    self._rows[existing_key]["last_seen"] = router_snapshot
+                    changed = True
                 continue
             if existing_key and existing_key != key:
                 del self._rows[existing_key]
@@ -95,7 +101,7 @@ class DeviceRegistry:
                 source="config",
                 updated_at=now,
                 connected=connected,
-                last_seen=now if connected else 0.0,
+                last_seen=now if connected else router_snapshot,
             ).to_dict()
             changed = True
         if changed:
