@@ -19,6 +19,8 @@ class TrayApi(Protocol):
 
     def show_message(self, text: str, caption: str) -> None: ...
 
+    def show_menu(self) -> None: ...
+
     def run_message_loop(self) -> None: ...
 
 
@@ -27,6 +29,7 @@ class FakeTrayApi:
         self.icons: list[str] = []
         self.removed: list[bool] = []
         self.messages: list[tuple[str, str]] = []
+        self.menus: list[bool] = []
 
     def add_icon(self, tooltip: str) -> None:
         self.icons.append(tooltip)
@@ -36,6 +39,9 @@ class FakeTrayApi:
 
     def show_message(self, text: str, caption: str) -> None:
         self.messages.append((text, caption))
+
+    def show_menu(self) -> None:
+        self.menus.append(True)
 
     def run_message_loop(self) -> None:
         return
@@ -57,6 +63,15 @@ class TrayController:
 
     def show_status(self) -> None:
         self.api.show_message(self.status_text(), "HomeBot")
+
+    def handle_icon_message(self, message: int, lparam: int) -> None:
+        # Windows присылает мышиные события в параметре lparam канала иконки.
+        if message != WM_STATUS:
+            return
+        if lparam == 0x0205:  # WM_RBUTTONUP
+            self.api.show_menu()
+        elif lparam in (0x0201, 0x0203):  # WM_LBUTTONUP / WM_LBUTTONDBLCLK
+            self.show_status()
 
     def exit(self) -> None:
         if self._exited:
@@ -118,18 +133,10 @@ def _wndproc(hwnd, message, wparam, lparam):
     global _controller
     user32 = ctypes.windll.user32
     if message == WM_STATUS and _controller is not None:
-        _controller.show_status()
+        _controller.handle_icon_message(message, lparam)
         return 0
     if message == WM_EXIT and _controller is not None:
         _controller.exit()
-        return 0
-    if message == 0x0205 and _controller is not None:  # WM_RBUTTONUP
-        point = _Point()
-        user32.GetCursorPos(ctypes.byref(point))
-        menu = user32.CreatePopupMenu()
-        user32.AppendMenuW(menu, 0, 1, "Статус")
-        user32.AppendMenuW(menu, 0, 2, "Выход")
-        user32.TrackPopupMenu(menu, 0, point.x, point.y, 0, hwnd, None)
         return 0
     if message == 0x0111:  # WM_COMMAND
         command = wparam & 0xFFFF
@@ -148,6 +155,10 @@ class Win32TrayApi:
         self.hwnd = None
         self.icon = None
         self._wndproc_ref = _WNDPROC(_wndproc)
+        # Дескрипторы на 64 бит нельзя возвращать как c_int — иначе обрезка.
+        for name in ("CreateWindowExW", "LoadIconW", "CreatePopupMenu"):
+            getattr(self.user32, name).restype = ctypes.c_void_p
+        self.user32.DefWindowProcW.restype = ctypes.c_ssize_t
 
     def add_icon(self, tooltip: str) -> None:
         user32 = self.user32
@@ -196,7 +207,16 @@ class Win32TrayApi:
         data.hwnd = self.hwnd
         data.uID = 1
         self.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(data))
+        self.hwnd = None
         self.user32.PostQuitMessage(0)
+
+    def show_menu(self) -> None:
+        point = _Point()
+        self.user32.GetCursorPos(ctypes.byref(point))
+        menu = self.user32.CreatePopupMenu()
+        self.user32.AppendMenuW(menu, 0, 1, "Статус")
+        self.user32.AppendMenuW(menu, 0, 2, "Выход")
+        self.user32.TrackPopupMenu(menu, 0, point.x, point.y, 0, self.hwnd, None)
 
     def show_message(self, text: str, caption: str) -> None:
         self.user32.MessageBoxW(None, text, caption, 0x40)
@@ -219,12 +239,14 @@ def run_tray(config: Config | None = None, api: TrayApi | None = None) -> int:
         runtime = globals()["build_runtime"](config)
     except Exception as exc:
         logger.warning("Не удалось запустить бота: %s", type(exc).__name__)
-        api.show_message(f"Не удалось запустить HomeBot: {type(exc).__name__}", "HomeBot")
+        api.show_message(f"Не удалось запустить HomeBot: {exc}", "HomeBot")
         return 1
     server_thread = threading.Thread(
         target=runtime.server.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True
     )
     server_thread.start()
+    poller_thread = threading.Thread(target=runtime.poller.run, daemon=True)
+    poller_thread.start()
     controller = TrayController(runtime, api)
     _controller = controller
     controller.start()
@@ -234,6 +256,8 @@ def run_tray(config: Config | None = None, api: TrayApi | None = None) -> int:
         controller.exit()
     finally:
         controller.exit()
+        poller_thread.join(timeout=5)
+        server_thread.join(timeout=5)
         runtime.server.server_close()
         _controller = None
     return 0

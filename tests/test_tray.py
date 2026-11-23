@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import homebot.tray as tray_module
 from homebot.config import Config
-from homebot.tray import FakeTrayApi, TrayController
+from homebot.tray import WM_STATUS, FakeTrayApi, TrayController
 
 
 class _Server:
@@ -46,14 +46,17 @@ class TrayTest(unittest.TestCase):
 
     def test_run_tray_uses_injected_api(self):
         api = FakeTrayApi()
+        closed = []
+        poller_started = []
         fake_server = SimpleNamespace(
             shutdown=lambda: None,
-            server_close=lambda: None,
+            server_close=lambda: closed.append(True),
             serve_forever=lambda poll_interval=0.5: None,
         )
         fake_runtime = SimpleNamespace(
             stop_event=threading.Event(),
             server=fake_server,
+            poller=SimpleNamespace(run=lambda: poller_started.append(True)),
             service=SimpleNamespace(status=lambda: {"send_enabled": False, "pending": 0}),
         )
         original = tray_module.build_runtime
@@ -74,6 +77,21 @@ class TrayTest(unittest.TestCase):
             tray_module.build_runtime = original
         self.assertEqual(result, 0)
         self.assertEqual(api.icons, ["HomeBot"])
+        self.assertEqual(closed, [True])
+        self.assertEqual(poller_started, [True])
+
+    def test_right_click_opens_menu(self):
+        api = FakeTrayApi()
+        controller = TrayController(_runtime(), api)
+        controller.handle_icon_message(WM_STATUS, 0x0205)
+        self.assertEqual(api.menus, [True])
+
+    def test_left_click_shows_status(self):
+        api = FakeTrayApi()
+        controller = TrayController(_runtime(send_enabled=False, pending=1), api)
+        controller.handle_icon_message(WM_STATUS, 0x0201)
+        self.assertEqual(len(api.messages), 1)
+        self.assertIn("выкл", api.messages[0][0])
 
     def test_exit_stops_runtime(self):
         api = FakeTrayApi()
