@@ -135,8 +135,25 @@ class Store:
         with self._lock:
             path = self._dry_outbox if dry else self._outbox
             rows = self._read_lines(path)
+            record.setdefault("attempts", 0)
             rows.append(record)
             self._write_lines(path, rows)
+
+    def has_delivered_task(self, task_id: str) -> bool:
+        with self._lock:
+            for path in (self._outbox, self._dry_outbox):
+                for row in self._read_lines(path):
+                    if row.get("task_id") == task_id and row.get("delivered_at"):
+                        return True
+            return False
+
+    def bump_outbox_attempts(self, event_id: str) -> None:
+        with self._lock:
+            rows = self._read_lines(self._outbox)
+            for row in rows:
+                if row.get("event_id") == event_id:
+                    row["attempts"] = int(row.get("attempts", 0)) + 1
+            self._write_lines(self._outbox, rows)
 
     def undelivered(self) -> list[dict[str, Any]]:
         with self._lock:

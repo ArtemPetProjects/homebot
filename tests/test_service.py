@@ -101,6 +101,58 @@ class ServiceTest(unittest.TestCase):
         self.enabled.notify(Event("info", "второе", "same"))
         self.assertEqual(len(self.transport.sent), 1)
 
+    def test_ask_send_failure_goes_to_outbox(self):
+        class Failing:
+            def send_message(self, *args, **kwargs):
+                raise RuntimeError("network down")
+
+        failing = HomeBotService(
+            _config(True), self.store, Failing(), self.clock
+        )
+        result = failing.ask(Ask("q-fail", "Продолжить?", ("Да", "Нет")))
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["delivered"])
+        self.assertIn("q-fail", (self.state / "outbox.jsonl").read_text(encoding="utf-8"))
+
+    def test_drain_outbox_retries_and_marks_delivered(self):
+        self.store.append_outbox(
+            {"event_id": "e1", "kind": "notify", "task_id": "t9", "text": "хвост"},
+            dry=False,
+        )
+        self.enabled.drain_outbox()
+        self.assertEqual(len(self.transport.sent), 1)
+        self.assertEqual(self.store.undelivered(), [])
+
+    def test_drain_outbox_stops_after_three_attempts(self):
+        self.store.append_outbox(
+            {
+                "event_id": "e2",
+                "kind": "notify",
+                "task_id": "t10",
+                "text": "хвост",
+                "attempts": 3,
+            },
+            dry=False,
+        )
+        self.enabled.drain_outbox()
+        self.assertEqual(self.transport.sent, [])
+
+    def test_delivered_task_id_is_not_duplicated_after_restart(self):
+        self.store.append_outbox(
+            {
+                "event_id": "e3",
+                "kind": "notify",
+                "task_id": "dup",
+                "text": "уже отправлено",
+                "delivered_at": "2026-11-24T00:00:00",
+            },
+            dry=False,
+        )
+        fresh = HomeBotService(_config(True), self.store, self.transport, self.clock)
+        result = fresh.notify(Event("info", "ещё раз", "dup"))
+        self.assertEqual(result["queued"], 0)
+        self.assertEqual(self.transport.sent, [])
+
     def test_answer_seq_is_monotonic(self):
         first = self._ask_and_data("q1")
         self.enabled.handle_callback(

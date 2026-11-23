@@ -31,6 +31,8 @@ class Ask:
             raise ValueError("Нужно от 2 до 8 вариантов ответа")
         if len(set(self.options)) != len(self.options):
             raise ValueError("Варианты ответа должны быть уникальными")
+        if any(len(option) > 64 for option in self.options):
+            raise ValueError("Текст варианта ответа длиннее 64 символов")
 
 
 @dataclass(frozen=True)

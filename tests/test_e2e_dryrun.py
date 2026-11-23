@@ -8,6 +8,7 @@ from pathlib import Path
 
 from homebot.bridge import make_server
 from homebot.config import Config
+from homebot.main import build_runtime
 from homebot.service import HomeBotService
 from homebot.store import Store
 from homebot.telegram import FakeTelegramTransport
@@ -56,13 +57,34 @@ class E2EDryRunTest(unittest.TestCase):
             return json.loads(response.read().decode("utf-8"))
 
     def test_build_runtime_uses_fake_in_dryrun(self):
-        from homebot.main import build_runtime
-
         runtime = build_runtime(self.config, state_dir=self.state)
         try:
             self.assertIsInstance(runtime.transport, FakeTelegramTransport)
             self.assertFalse(runtime.config.send_enabled)
             self.assertEqual(runtime.service.status()["send_enabled"], False)
+        finally:
+            runtime.stop_event.set()
+            runtime.server.server_close()
+
+    def test_build_runtime_drains_outbox_when_enabled(self):
+        enabled = Config(
+            bot_token="123:TOKEN",
+            chat_id=42,
+            api_key="test-key",
+            host="127.0.0.1",
+            port=8765,
+            send_enabled=True,
+            poll_interval=1.0,
+            ask_ttl_minutes=30,
+        )
+        Store(self.state, clock=lambda: 1000.0).append_outbox(
+            {"event_id": "seed", "kind": "notify", "task_id": "seed", "text": "хвост"},
+            dry=False,
+        )
+        fake = FakeTelegramTransport()
+        runtime = build_runtime(enabled, state_dir=self.state, transport=fake)
+        try:
+            self.assertEqual(len(fake.sent), 1)
         finally:
             runtime.stop_event.set()
             runtime.server.server_close()

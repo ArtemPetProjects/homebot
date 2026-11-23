@@ -29,9 +29,21 @@ class Runtime:
     stop_event: threading.Event
 
     def shutdown(self) -> None:
+        # shutdown() блокируется до выхода serve_forever, поэтому нельзя в том же потоке.
         self.stop_event.set()
-        self.server.shutdown()
+        threading.Thread(target=self.server.shutdown, daemon=True).start()
         self.server.server_close()
+
+
+def make_stop_handler(runtime: Runtime):
+    def handler(signum, frame) -> None:
+        logger.info("Получен сигнал остановки")
+        runtime.stop_event.set()
+        # Сигнальный хендлер выполняется в главном потоке внутри serve_forever;
+        # прямой вызов shutdown() привёл бы к взаимной блокировке.
+        threading.Thread(target=runtime.server.shutdown, daemon=True).start()
+
+    return handler
 
 
 def build_runtime(
@@ -52,6 +64,9 @@ def build_runtime(
             else HttpTelegramTransport(config)
         )
     service = HomeBotService(config, store, transport, clock)
+    # Недоставленные события повторяются при старте, но только при включённой отправке.
+    if config.send_enabled:
+        service.drain_outbox()
     stop_event = threading.Event()
     poller = Poller(service, transport, store, config, stop_event)
     server = make_server(config, service, port=port)
@@ -71,11 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(env_path)
     runtime = build_runtime(config)
 
-    def handle_stop(signum, frame) -> None:
-        logger.info("Получен сигнал остановки")
-        runtime.stop_event.set()
-        runtime.server.shutdown()
-
+    handle_stop = make_stop_handler(runtime)
     signal.signal(signal.SIGINT, handle_stop)
     signal.signal(signal.SIGTERM, handle_stop)
 

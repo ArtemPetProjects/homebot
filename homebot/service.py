@@ -41,7 +41,9 @@ class HomeBotService:
     def notify(self, event: Event) -> dict[str, Any]:
         event.validate()
         with self._lock:
-            if event.task_id in self._seen_task_ids:
+            if event.task_id in self._seen_task_ids or self.store.has_delivered_task(
+                event.task_id
+            ):
                 return {"ok": True, "queued": 0, "delivered": False}
             self._seen_task_ids.add(event.task_id)
             text = format_notification(event)
@@ -104,9 +106,14 @@ class HomeBotService:
                 )
                 return {"ok": True, "delivered": False, "id": request.id}
             keyboard = build_inline_keyboard(pending)
-            result = self.transport.send_message(
-                self.config.chat_id, request.text, reply_markup=keyboard
-            )
+            try:
+                result = self.transport.send_message(
+                    self.config.chat_id, request.text, reply_markup=keyboard
+                )
+            except Exception as exc:
+                logger.warning("Не удалось отправить запрос: %s", type(exc).__name__)
+                self.store.append_outbox(record, dry=False)
+                return {"ok": True, "delivered": False, "id": request.id}
             pending.message_id = result.get("message_id")
             pending.chat_id = self.config.chat_id
             self.store.save_pending(pending)
@@ -215,12 +222,16 @@ class HomeBotService:
             for record in self.store.undelivered():
                 if not self.config.send_enabled:
                     return
+                event_id = str(record.get("event_id", ""))
+                if int(record.get("attempts", 0)) >= 3:
+                    continue
                 try:
                     self.transport.send_message(
                         self.config.chat_id, str(record.get("text", ""))
                     )
-                    self.store.mark_delivered(str(record.get("event_id", "")))
+                    self.store.mark_delivered(event_id)
                 except Exception as exc:
                     logger.warning(
                         "Не удалось отправить из outbox: %s", type(exc).__name__
                     )
+                    self.store.bump_outbox_attempts(event_id)
