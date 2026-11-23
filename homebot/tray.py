@@ -68,7 +68,7 @@ class TrayController:
         # Windows присылает мышиные события в параметре lparam канала иконки.
         if message != WM_STATUS:
             return
-        if lparam == 0x0205:  # WM_RBUTTONUP
+        if lparam in (0x0205, 0x0204):  # WM_RBUTTONUP / WM_RBUTTONDBLCLK
             self.api.show_menu()
         elif lparam in (0x0201, 0x0203):  # WM_LBUTTONUP / WM_LBUTTONDBLCLK
             self.show_status()
@@ -159,6 +159,28 @@ class Win32TrayApi:
         for name in ("CreateWindowExW", "LoadIconW", "CreatePopupMenu"):
             getattr(self.user32, name).restype = ctypes.c_void_p
         self.user32.DefWindowProcW.restype = ctypes.c_ssize_t
+        self.user32.DefWindowProcW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_size_t,
+            ctypes.c_ssize_t,
+        ]
+        self.user32.RegisterClassW.restype = ctypes.c_uint16
+        self.user32.RegisterClassW.argtypes = [ctypes.c_void_p]
+        self.user32.CreateWindowExW.argtypes = [
+            ctypes.c_uint32,
+            ctypes.c_wchar_p,
+            ctypes.c_wchar_p,
+            ctypes.c_uint32,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
 
     def add_icon(self, tooltip: str) -> None:
         user32 = self.user32
@@ -185,9 +207,12 @@ class Win32TrayApi:
         wnd_class.lpfnWndProc = self._wndproc_ref
         wnd_class.lpszClassName = class_name
         user32.RegisterClassW(ctypes.byref(wnd_class))
+        hwnd_message = ctypes.c_void_p((-3) & 0xFFFFFFFFFFFFFFFF)
         self.hwnd = user32.CreateWindowExW(
-            0, class_name, "HomeBot", 0, 0, 0, 0, 0, -3, None, None, None
+            0, class_name, "HomeBot", 0, 0, 0, 0, 0, hwnd_message, None, None, None
         )
+        if not self.hwnd:
+            raise OSError("Не удалось создать скрытое окно для трея")
         self.icon = user32.LoadIconW(None, IDI_APPLICATION)
         data = _NotifyIconData()
         data.cbSize = ctypes.sizeof(_NotifyIconData)

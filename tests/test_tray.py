@@ -83,8 +83,9 @@ class TrayTest(unittest.TestCase):
     def test_right_click_opens_menu(self):
         api = FakeTrayApi()
         controller = TrayController(_runtime(), api)
-        controller.handle_icon_message(WM_STATUS, 0x0205)
-        self.assertEqual(api.menus, [True])
+        for code in (0x0205, 0x0204):
+            controller.handle_icon_message(WM_STATUS, code)
+        self.assertEqual(api.menus, [True, True])
 
     def test_left_click_shows_status(self):
         api = FakeTrayApi()
