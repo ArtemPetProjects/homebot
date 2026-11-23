@@ -237,3 +237,7 @@ def run_tray(config: Config | None = None, api: TrayApi | None = None) -> int:
         runtime.server.server_close()
         _controller = None
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_tray())
