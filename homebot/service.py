@@ -318,13 +318,19 @@ class HomeBotService:
             label_keys = set()
 
             def label_key(value: str) -> str:
-                return "".join(ch for ch in value.lower() if ch.isalnum())
+                value = value.lower().replace("(офлайн)", "").replace("(онлайн)", "")
+                return "".join(ch for ch in value if ch.isalnum())
+
+            def display_identifier(value: str) -> str:
+                if value.count(":") >= 2:
+                    return f"без IP (MAC {value})"
+                return value
 
             for device in scanned:
                 identifier = device.ip or device.mac or "?"
                 rows.append(
                     (
-                        identifier,
+                        display_identifier(identifier),
                         device.label or device.hostname or "Без имени",
                         device.connected,
                         device.last_seen,
@@ -343,7 +349,9 @@ class HomeBotService:
                 # Одно и то же устройство может быть в реестре и с IP, и с MAC — не дублируем.
                 if info.label and label_key(info.label) in label_keys:
                     continue
-                rows.append((identifier, info.label or "Без имени", info.connected, info.last_seen))
+                rows.append(
+                    (display_identifier(identifier), info.label or "Без имени", info.connected, info.last_seen)
+                )
                 if info.label:
                     label_keys.add(label_key(info.label))
             lines = ["Устройства домашней сети:"]
