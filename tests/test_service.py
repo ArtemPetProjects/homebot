@@ -269,6 +269,24 @@ class ServiceTest(unittest.TestCase):
         self.assertIn("192.168.1.17 — POCO X8 Pro Max", text)
         self.assertIn("оффлайн с:", text)
 
+    def test_devices_shows_first_seen_when_last_seen_unknown(self):
+        class FakeRouter:
+            def devices(self):
+                return [
+                    RouterDevice("Yandex Bulb", "192.168.1.99", "aa:bb:cc:00:11:22", False, 0),
+                ]
+
+        cfg = _config(True)
+        object.__setattr__(cfg, "router_login", "admin")
+        object.__setattr__(cfg, "router_password", "pw")
+        service = HomeBotService(
+            cfg, self.store, self.transport, self.clock,
+            devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
+        )
+        service.handle_command({"text": "/devices", "chat": {"id": 42}})
+        text = self.transport.sent[-1]["text"]
+        self.assertIn("зафиксировано: 01.01.1970 03:16", text)
+
     def test_devices_no_duplicate_labels_and_no_raw_mac(self):
         class FakeRouter:
             def devices(self):

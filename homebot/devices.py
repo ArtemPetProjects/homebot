@@ -19,6 +19,7 @@ class DeviceInfo:
     updated_at: float
     connected: bool = False
     last_seen: float = 0.0
+    first_seen: float = 0.0
 
     def to_dict(self) -> dict:
         return {
@@ -29,6 +30,7 @@ class DeviceInfo:
             "updated_at": self.updated_at,
             "connected": self.connected,
             "last_seen": self.last_seen,
+            "first_seen": self.first_seen,
         }
 
     @classmethod
@@ -41,6 +43,7 @@ class DeviceInfo:
             updated_at=float(data.get("updated_at", 0)),
             connected=bool(data.get("connected", False)),
             last_seen=float(data.get("last_seen", 0)),
+            first_seen=float(data.get("first_seen", 0)),
         )
 
 
@@ -163,6 +166,7 @@ class DeviceRegistry:
             # Для офлайн-устройства без свежего времени берём последнее известное.
             if not connected and not last_seen and old and old.last_seen:
                 last_seen = old.last_seen
+            first_seen = old.first_seen if old and old.first_seen else self.clock()
             info = DeviceInfo(
                 ip=ip,
                 mac=key,
@@ -171,6 +175,7 @@ class DeviceRegistry:
                 updated_at=self.clock(),
                 connected=connected,
                 last_seen=self.clock() if last_seen is None else last_seen,
+                first_seen=first_seen,
             )
             self._rows[key] = info.to_dict()
             self._write()

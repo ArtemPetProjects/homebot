@@ -43,6 +43,13 @@ class DevicesTest(unittest.TestCase):
         self.registry.remember("192.168.1.1", "aa:bb:cc:dd:ee:ff", "Мой роутер", "user")
         self.assertEqual(self.registry.known("192.168.1.1").label, "Мой роутер")
 
+    def test_remember_sets_first_seen_for_offline_device_without_last_seen(self):
+        info = self.registry.remember(
+            "192.168.1.99", "aa:bb:cc:00:11:22", "Новое устройство", "router",
+            connected=False, last_seen=0.0,
+        )
+        self.assertEqual(info.first_seen, 1000.0)
+
     def test_remember_and_reload(self):
         self.registry.remember("192.168.1.9", "aa:bb:cc:dd:ee:ff", "Телефон", "user")
         reloaded = DeviceRegistry(self.state, clock=lambda: 1000.0)

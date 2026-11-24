@@ -334,12 +334,14 @@ class HomeBotService:
                 if key and key in label_keys:
                     continue
                 identifier = device.ip or device.mac or "?"
+                known = self.devices.known(device.ip) or self.devices.known(device.mac)
                 rows.append(
                     (
                         display_identifier(identifier),
                         device.label or device.hostname or "Без имени",
                         device.connected,
                         device.last_seen,
+                        known.first_seen if known else 0.0,
                     )
                 )
                 seen.add(identifier)
@@ -356,20 +358,29 @@ class HomeBotService:
                 if info.label and label_key(info.label) in label_keys:
                     continue
                 rows.append(
-                    (display_identifier(identifier), info.label or "Без имени", info.connected, info.last_seen)
+                    (
+                        display_identifier(identifier),
+                        info.label or "Без имени",
+                        info.connected,
+                        info.last_seen,
+                        info.first_seen,
+                    )
                 )
                 if info.label:
                     label_keys.add(label_key(info.label))
             lines = ["Устройства домашней сети:"]
             if not rows:
                 lines.append("Устройства не найдены")
-            for identifier, label, connected, last_seen in rows:
+            for identifier, label, connected, last_seen, first_seen in rows:
                 lines.append(f"{identifier} — {label}")
                 if connected:
                     lines.append("онлайн")
                 elif last_seen:
                     moment = datetime.datetime.fromtimestamp(last_seen).strftime("%d.%m.%Y %H:%M")
                     lines.append(f"оффлайн с: {moment}")
+                elif first_seen:
+                    moment = datetime.datetime.fromtimestamp(first_seen).strftime("%d.%m.%Y %H:%M")
+                    lines.append(f"зафиксировано: {moment}")
                 else:
                     lines.append("оффлайн, время последнего подключения неизвестно")
             self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
