@@ -179,6 +179,32 @@ class HomeBotService:
             result["send_enabled"] = self.config.send_enabled
             return result
 
+    def _send_reply(
+        self, chat_id: int, text: str, reply_markup: dict[str, Any] | None = None
+    ) -> None:
+        # Ответ команды сохраняется в outbox: при разовом сбое его сможет повторить поллер.
+        record: dict[str, Any] = {
+            "event_id": uuid.uuid4().hex,
+            "kind": "reply",
+            "chat_id": chat_id,
+            "text": text,
+            "ts": self._timestamp(),
+        }
+        if reply_markup is not None:
+            record["reply_markup"] = reply_markup
+        if not self.config.send_enabled:
+            self.store.append_outbox(record, dry=True)
+            return
+        try:
+            self.transport.send_message(chat_id, text, reply_markup=reply_markup)
+        except Exception as exc:
+            # Секреты в исключении не логируем — только тип ошибки.
+            logger.warning("Не удалось отправить ответ: %s", type(exc).__name__)
+            self.store.append_outbox(record, dry=False)
+            return
+        self.store.append_outbox(record, dry=False)
+        self.store.mark_delivered(record["event_id"])
+
     def expire_due(self) -> None:
         ttl = self.config.ask_ttl_minutes * 60
         now = self.clock()
@@ -231,10 +257,10 @@ class HomeBotService:
             reply_chat = (message.get("chat") or {}).get("id")
             if reply_chat != self.config.chat_id:
                 reply_chat = self.config.chat_id
-            self.transport.send_message(
+            self._send_reply(
                 reply_chat,
                 f"Принято: {option}\nНачинаю работать по вашему выбору.",
-                reply_markup=build_main_keyboard(),
+                build_main_keyboard(),
             )
             chat_id = (message.get("chat") or {}).get("id")
             message_id = message.get("message_id") or pending.message_id
@@ -261,7 +287,7 @@ class HomeBotService:
             reply = f"Записано для агента: {text}\n(id: {record['id']})"
         else:
             return
-        self.transport.send_message(chat_id, reply, reply_markup=build_main_keyboard())
+        self._send_reply(chat_id, reply, build_main_keyboard())
 
     def handle_command(self, message: dict[str, Any]) -> None:
         text = str(message.get("text", "")).strip()
@@ -315,7 +341,14 @@ class HomeBotService:
         elif command == "/devices":
             import datetime
 
-            scanned = self._scan_devices()
+            scan_error = None
+            try:
+                scanned = self._scan_devices()
+            except Exception as exc:
+                # Даже при недоступном сканере пользователь должен получить ответ.
+                logger.warning("Сканирование устройств недоступно: %s", type(exc).__name__)
+                scanned = []
+                scan_error = "Сканирование на этом устройстве недоступно"
             rows = []
             seen = set()
             label_keys = set()
@@ -369,6 +402,8 @@ class HomeBotService:
                 if info.label:
                     label_keys.add(label_key(info.label))
             lines = ["Устройства домашней сети:"]
+            if scan_error:
+                lines.append(scan_error)
             if not rows:
                 lines.append("Устройства не найдены")
             for identifier, label, connected, last_seen, first_seen in rows:
@@ -383,7 +418,7 @@ class HomeBotService:
                     lines.append(f"зафиксировано: {moment}")
                 else:
                     lines.append("оффлайн, время последнего подключения неизвестно")
-            self.transport.send_message(chat_id, "\n".join(lines), reply_markup=build_main_keyboard())
+            self._send_reply(chat_id, "\n".join(lines), build_main_keyboard())
             return
         elif command == "/nextdown":
             active = [
@@ -395,16 +430,14 @@ class HomeBotService:
                 reply = "Нет ожидающих вопросов агента."
             else:
                 latest = max(active, key=lambda item: item.created_at)
-                self.transport.send_message(
-                    chat_id, latest.text, reply_markup=build_inline_keyboard(latest)
-                )
+                self._send_reply(chat_id, latest.text, build_inline_keyboard(latest))
                 return
         elif not command.startswith("/"):
             self.handle_message(message)
             return
         else:
             return
-        self.transport.send_message(chat_id, reply, reply_markup=build_main_keyboard())
+        self._send_reply(chat_id, reply, build_main_keyboard())
 
     def _scan_devices(self) -> list:
         now = self.clock()
@@ -479,8 +512,11 @@ class HomeBotService:
                 if int(record.get("attempts", 0)) >= 3:
                     continue
                 try:
+                    # Ответы уходят в тот чат и с той клавиатурой, с которой были созданы.
                     self.transport.send_message(
-                        self.config.chat_id, str(record.get("text", ""))
+                        record.get("chat_id", self.config.chat_id),
+                        str(record.get("text", "")),
+                        reply_markup=record.get("reply_markup"),
                     )
                     self.store.mark_delivered(event_id)
                 except Exception as exc:

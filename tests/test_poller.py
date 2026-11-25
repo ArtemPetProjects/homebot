@@ -76,6 +76,31 @@ class PollerTest(unittest.TestCase):
         self.assertEqual(len(self.transport.sent), 1)
         self.assertIn("Отправка", self.transport.sent[0]["text"])
 
+    def test_run_retries_undelivered_outbox_while_running(self):
+        markup = {"keyboard": [[{"text": "Устройства"}]], "resize_keyboard": True}
+        self.store.append_outbox(
+            {
+                "event_id": "reply-retry",
+                "kind": "reply",
+                "chat_id": 77,
+                "text": "Ответ после сбоя",
+                "reply_markup": markup,
+                "ts": "2026-11-25T00:00:00",
+            },
+            dry=False,
+        )
+
+        def stopper():
+            time.sleep(0.1)
+            self.stop.set()
+
+        thread = threading.Thread(target=stopper, daemon=True)
+        thread.start()
+        self.poller.run()
+        thread.join(timeout=2)
+        self.assertTrue(any(item["chat_id"] == 77 for item in self.transport.sent))
+        self.assertEqual(self.store.undelivered(), [])
+
     def test_run_stops_on_event(self):
         def stopper():
             time.sleep(0.05)

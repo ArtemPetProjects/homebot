@@ -1,6 +1,8 @@
 # PURPOSE: тесты сканера локальной сети с подменёнными источниками данных.
 import unittest
+from unittest import mock
 
+import homebot.network as network
 from homebot.network import scan_network
 
 ARP_WITH_BROADCAST = """Interface: 192.168.1.13 --- 0x8
@@ -20,6 +22,27 @@ ARP = """Interface: 192.168.1.13 --- 0x8
 
 
 class NetworkTest(unittest.TestCase):
+    def test_hidden_subprocess_kwargs_empty_on_non_windows(self):
+        # На Termux нет subprocess.STARTUPINFO — Windows-only kwargs ломают сканер.
+        with mock.patch.object(network.os, "name", "posix"):
+            self.assertEqual(network._hidden_subprocess_kwargs(), {})
+
+    def test_ping_probe_passes_no_windows_kwargs_on_non_windows(self):
+        calls = []
+
+        def fake_run(*args, **kwargs):
+            calls.append((args, kwargs))
+            return network.subprocess.CompletedProcess(args[0], 0)
+
+        with mock.patch.object(network.os, "name", "posix"), mock.patch.object(
+            network.subprocess, "run", fake_run
+        ):
+            self.assertTrue(network.ping_probe("192.168.1.1", timeout=0.01))
+
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("creationflags", calls[0][1])
+        self.assertNotIn("startupinfo", calls[0][1])
+
     def test_parses_arp_output(self):
         devices = scan_network(
             "192.168.1.0/24",

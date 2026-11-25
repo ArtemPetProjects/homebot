@@ -54,6 +54,11 @@ class Poller:
 
     def run(self) -> None:
         while not self.stop_event.is_set():
+            try:
+                # Недоставленные ответы повторяются, пока процесс жив, а не только на старте.
+                self.service.drain_outbox()
+            except Exception as exc:
+                logger.warning("Ошибка повтора outbox: %s", type(exc).__name__)
             if not self.config.send_enabled or not self.enabled():
                 # В dry-run и в режиме ожидания не обращаемся к Telegram.
                 self.stop_event.wait(self.config.poll_interval)

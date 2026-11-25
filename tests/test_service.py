@@ -1,7 +1,9 @@
 # PURPOSE: тесты сервиса уведомлений, запросов и ответов.
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from homebot.config import Config
 from homebot.devices import DeviceRegistry
@@ -325,6 +327,60 @@ class ServiceTest(unittest.TestCase):
         text = self.transport.sent[0]["text"]
         self.assertIn("192.168.1.77", text)
         self.assertIn("Устройство", text)
+
+    def test_devices_replies_when_scan_fails(self):
+        with mock.patch.object(
+            self.enabled, "_scan_devices", side_effect=RuntimeError("сканер недоступен")
+        ):
+            self.enabled.handle_command({"text": "/devices", "chat": {"id": 42}})
+        self.assertEqual(len(self.transport.sent), 1)
+        self.assertEqual(self.transport.sent[0]["chat_id"], 42)
+        self.assertIn(
+            "Сканирование на этом устройстве недоступно", self.transport.sent[0]["text"]
+        )
+        self.assertIsNotNone(self.transport.sent[0]["reply_markup"])
+
+    def test_reply_record_keeps_chat_id_and_keyboard(self):
+        self.enabled.handle_command({"text": "/ping", "chat": {"id": 42}})
+        lines = (self.state / "outbox.jsonl").read_text(encoding="utf-8").splitlines()
+        records = [json.loads(line) for line in lines if line.strip()]
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["kind"], "reply")
+        self.assertEqual(records[0]["chat_id"], 42)
+        self.assertEqual(records[0]["reply_markup"]["keyboard"][0][0]["text"], "Устройства")
+        self.assertTrue(records[0]["delivered_at"])
+
+    def test_reply_send_failure_queues_for_retry(self):
+        class Failing:
+            def send_message(self, *args, **kwargs):
+                raise RuntimeError("network down")
+
+        failing = HomeBotService(_config(True), self.store, Failing(), self.clock)
+        failing.handle_command({"text": "/status", "chat": {"id": 42}})
+        pending = self.store.undelivered()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["kind"], "reply")
+        self.assertEqual(pending[0]["chat_id"], 42)
+        self.assertIn("Отправка", pending[0]["text"])
+
+    def test_drain_outbox_uses_saved_chat_id_and_markup(self):
+        markup = {"keyboard": [[{"text": "Устройства"}]], "resize_keyboard": True}
+        self.store.append_outbox(
+            {
+                "event_id": "reply-77",
+                "kind": "reply",
+                "chat_id": 77,
+                "text": "хвост ответа",
+                "reply_markup": markup,
+                "ts": "2026-11-25T00:00:00",
+            },
+            dry=False,
+        )
+        self.enabled.drain_outbox()
+        self.assertEqual(len(self.transport.sent), 1)
+        self.assertEqual(self.transport.sent[0]["chat_id"], 77)
+        self.assertEqual(self.transport.sent[0]["reply_markup"], markup)
+        self.assertEqual(self.store.undelivered(), [])
 
     def test_callback_sends_confirmation_in_chat(self):
         data = self._ask_and_data("q1")

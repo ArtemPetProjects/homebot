@@ -62,6 +62,9 @@ def _usable_ip(ip: str, network) -> bool:
 
 
 def _hidden_subprocess_kwargs() -> dict:
+    if os.name != "nt":
+        # На Android/Termux нет subprocess.STARTUPINFO и creationflags.
+        return {}
     # Без этого каждый ping из pythonw показывает мигающее окно консоли.
     startup = subprocess.STARTUPINFO()
     startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
