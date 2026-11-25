@@ -4,7 +4,7 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(r"E:\Projects\HomeBot")
+ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from homebot.config import load_config  # noqa: E402
