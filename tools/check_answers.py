@@ -8,6 +8,7 @@ ROOT = Path(r"E:\Projects\HomeBot")
 sys.path.insert(0, str(ROOT))
 
 from homebot.config import load_config  # noqa: E402
+from homebot.models import user_answers  # noqa: E402
 
 cfg = load_config(ROOT / ".env")
 cursor_path = ROOT / "state" / "agent_cursor.json"
@@ -25,7 +26,8 @@ request = urllib.request.Request(
 with urllib.request.urlopen(request, timeout=10) as response:
     answers = json.loads(response.read().decode("utf-8")).get("answers", [])
 
-for answer in answers:
+visible = user_answers(answers)
+for answer in visible:
     print(
         json.dumps(
             {
@@ -40,10 +42,11 @@ for answer in answers:
     )
 
 if answers:
+    # Курсор продвигаем по всем ответам, включая служебные, чтобы они не копились.
     cursor_path.parent.mkdir(parents=True, exist_ok=True)
     cursor_path.write_text(
         json.dumps({"last_seq": max(int(a["seq"]) for a in answers)}) + "\n",
         encoding="utf-8",
     )
-else:
+if not visible:
     print("NO_NEW_ANSWERS")

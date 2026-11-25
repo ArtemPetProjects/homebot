@@ -66,6 +66,16 @@ class Answer:
         )
 
 
+def user_answers(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Отобрать ответы пользователя, исключив служебные ответы самого бота."""
+    return [
+        item
+        for item in items
+        if item.get("reason") not in {"ttl", "dry_run"}
+        and not str(item.get("option", "")).startswith("__")
+    ]
+
+
 @dataclass
 class PendingAsk:
     id: str
