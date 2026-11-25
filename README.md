@@ -72,7 +72,7 @@ Invoke-RestMethod -Method Get -Headers $h -Uri 'http://127.0.0.1:8765/status'
 ## Тесты
 
 ```
-cd E:\Projects\HomeBot
+cd E:\Projects\ArtemPetProjects\HomeBot
 python -m unittest discover -s .
 ```
 
