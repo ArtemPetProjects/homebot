@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    env_path = Path(args.env) if args.env else Path(__file__).resolve().parent.parent / ".env"
+    env_path = Path(args.env) if args.env else Path(__file__).resolve().parents[2] / ".env"
     config = load_config(env_path)
     runtime = build_runtime(config)
 
