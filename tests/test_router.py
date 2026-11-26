@@ -4,8 +4,8 @@ import unittest
 from types import SimpleNamespace
 
 from homebot.config import Config
-from homebot.router import RouterClient
-from homebot.router_crypto import KEY, aes_cbc_encrypt
+from homebot.infrastructure.router import RouterClient
+from homebot.infrastructure.router_crypto import KEY, aes_cbc_encrypt
 
 
 class FakeResponse:

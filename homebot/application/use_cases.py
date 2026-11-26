@@ -1,4 +1,4 @@
-# PURPOSE: сервис уведомлений, запросов подтверждения и обработки ответов.
+# PURPOSE: прикладной use case: уведомления, запросы подтверждения и обработка ответов.
 import hashlib
 import logging
 import threading
@@ -6,14 +6,14 @@ import uuid
 from datetime import datetime
 from typing import Any, Callable
 
-from .config import Config
-from .devices import DeviceRegistry
-from .inbox import Inbox
-from .models import Answer, Ask, Event, PendingAsk
-from .network import Device, raw_ping, scan_network
-from .router import RouterClient
-from .store import Store
-from .telegram import (
+from homebot.config import Config
+from homebot.domain.devices import Device, DeviceRegistry
+from homebot.domain.models import Answer, Ask, Event, PendingAsk
+from homebot.infrastructure.inbox import Inbox
+from homebot.infrastructure.network import raw_ping, scan_network
+from homebot.infrastructure.router import RouterClient
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import (
     TelegramTransport,
     build_inline_keyboard,
     build_main_keyboard,
@@ -21,10 +21,12 @@ from .telegram import (
     parse_callback_data,
 )
 
+from .ports import DeviceScanner
+
 logger = logging.getLogger("homebot.service")
 
 
-class HomeBotService:
+class HomeBotUseCase:
     def __init__(
         self,
         config: Config,
@@ -37,6 +39,7 @@ class HomeBotService:
         probe_provider: Callable[[str], bool] | None = None,
         inbox: Inbox | None = None,
         router_client=None,
+        device_scanner: DeviceScanner | None = None,
     ):
         self.config = config
         self.store = store
@@ -48,6 +51,7 @@ class HomeBotService:
         self.probe_provider = probe_provider
         self.inbox = inbox if inbox is not None else Inbox(store.state_dir)
         self.router_client = router_client
+        self.device_scanner = device_scanner
         self._awaiting_text: set[int] = set()
         self._lock = threading.RLock()
         self._seen_task_ids: set[str] = set()
@@ -486,15 +490,18 @@ class HomeBotService:
                 for info in self.devices.all_devices()
             ]
         else:
-            scanned = scan_network(
-                self.config.network_subnet,
-                arp_provider=self.arp_provider,
-                resolver=self.resolver,
-                timeout=0.12,
-                probe=self.probe_provider
-                if self.probe_provider is not None
-                else (None if self.arp_provider is not None else raw_ping),
-            )
+            if self.device_scanner is not None:
+                scanned = self.device_scanner.scan(self.config.network_subnet, timeout=0.12)
+            else:
+                scanned = scan_network(
+                    self.config.network_subnet,
+                    arp_provider=self.arp_provider,
+                    resolver=self.resolver,
+                    timeout=0.12,
+                    probe=self.probe_provider
+                    if self.probe_provider is not None
+                    else (None if self.arp_provider is not None else raw_ping),
+                )
             devices = self.devices.with_labels(scanned)
             self.devices.observe(devices, now)
             devices = self.devices.with_labels(devices)
@@ -524,3 +531,7 @@ class HomeBotService:
                         "Не удалось отправить из outbox: %s", type(exc).__name__
                     )
                     self.store.bump_outbox_attempts(event_id)
+
+
+# Обратно совместимое имя для внешних вызывающих модулей.
+HomeBotService = HomeBotUseCase

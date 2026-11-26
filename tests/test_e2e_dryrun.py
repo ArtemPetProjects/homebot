@@ -6,12 +6,12 @@ import unittest
 import urllib.request
 from pathlib import Path
 
-from homebot.bridge import make_server
+from homebot.api.bridge import make_server
 from homebot.config import Config
-from homebot.main import build_runtime
-from homebot.service import HomeBotService
-from homebot.store import Store
-from homebot.telegram import FakeTelegramTransport
+from homebot.api.main import build_runtime
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import FakeTelegramTransport
 
 
 class E2EDryRunTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class E2EDryRunTest(unittest.TestCase):
         )
         self.transport = FakeTelegramTransport()
         store = Store(self.state, clock=lambda: 1000.0)
-        service = HomeBotService(self.config, store, self.transport, lambda: 1000.0)
+        service = HomeBotUseCase(self.config, store, self.transport, lambda: 1000.0)
         self.server = make_server(self.config, service, port=0)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

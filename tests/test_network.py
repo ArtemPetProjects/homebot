@@ -2,8 +2,8 @@
 import unittest
 from unittest import mock
 
-import homebot.network as network
-from homebot.network import scan_network
+import homebot.infrastructure.network as network
+from homebot.infrastructure.network import scan_network
 
 ARP_WITH_BROADCAST = """Interface: 192.168.1.13 --- 0x8
   192.168.1.1           5c-94-62-12-bc-39     dynamic

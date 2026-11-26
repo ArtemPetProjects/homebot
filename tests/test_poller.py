@@ -6,11 +6,11 @@ import unittest
 from pathlib import Path
 
 from homebot.config import Config
-from homebot.models import Ask
-from homebot.poller import Poller
-from homebot.service import HomeBotService
-from homebot.store import Store
-from homebot.telegram import FakeTelegramTransport
+from homebot.domain.models import Ask
+from homebot.api.poller import Poller
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import FakeTelegramTransport
 
 
 class PollerTest(unittest.TestCase):
@@ -28,7 +28,7 @@ class PollerTest(unittest.TestCase):
             poll_interval=0.01,
             ask_ttl_minutes=30,
         )
-        self.service = HomeBotService(
+        self.service = HomeBotUseCase(
             self.config, self.store, self.transport, lambda: 1000.0
         )
         self.stop = threading.Event()

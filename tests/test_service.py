@@ -6,19 +6,19 @@ from pathlib import Path
 from unittest import mock
 
 from homebot.config import Config
-from homebot.devices import DeviceRegistry
-from homebot.inbox import Inbox
-from homebot.router import RouterDevice
+from homebot.domain.devices import DeviceRegistry
+from homebot.infrastructure.inbox import Inbox
+from homebot.infrastructure.router import RouterDevice
 
 ARP_SAMPLE = """Interface: 192.168.1.13 --- 0x8
   Internet Address      Physical Address      Type
   192.168.1.1           00-11-22-33-44-55     dynamic
   192.168.1.77          aa-bb-cc-dd-ee-ff     dynamic
 """
-from homebot.models import Ask, Event
-from homebot.service import HomeBotService
-from homebot.store import Store
-from homebot.telegram import FakeTelegramTransport
+from homebot.domain.models import Ask, Event
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import FakeTelegramTransport
 
 
 def _config(send_enabled: bool) -> Config:
@@ -45,11 +45,11 @@ class ServiceTest(unittest.TestCase):
         self.inbox = Inbox(self.state, clock=self.clock)
         self.transport = FakeTelegramTransport()
         providers = {"arp_provider": lambda: ARP_SAMPLE, "resolver": lambda ip: None}
-        self.service = HomeBotService(
+        self.service = HomeBotUseCase(
             _config(False), self.store, self.transport, self.clock,
             devices=self.registry, inbox=self.inbox, **providers
         )
-        self.enabled = HomeBotService(
+        self.enabled = HomeBotUseCase(
             _config(True), self.store, self.transport, self.clock,
             devices=self.registry, inbox=self.inbox, **providers
         )
@@ -124,7 +124,7 @@ class ServiceTest(unittest.TestCase):
             def send_message(self, *args, **kwargs):
                 raise RuntimeError("network down")
 
-        failing = HomeBotService(
+        failing = HomeBotUseCase(
             _config(True), self.store, Failing(), self.clock
         )
         result = failing.ask(Ask("q-fail", "Продолжить?", ("Да", "Нет")))
@@ -166,7 +166,7 @@ class ServiceTest(unittest.TestCase):
             },
             dry=False,
         )
-        fresh = HomeBotService(_config(True), self.store, self.transport, self.clock)
+        fresh = HomeBotUseCase(_config(True), self.store, self.transport, self.clock)
         result = fresh.notify(Event("info", "ещё раз", "dup"))
         self.assertEqual(result["queued"], 0)
         self.assertEqual(self.transport.sent, [])
@@ -261,7 +261,7 @@ class ServiceTest(unittest.TestCase):
         cfg = _config(True)
         object.__setattr__(cfg, "router_login", "admin")
         object.__setattr__(cfg, "router_password", "pw")
-        service = HomeBotService(
+        service = HomeBotUseCase(
             cfg, self.store, self.transport, self.clock,
             devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
         )
@@ -281,7 +281,7 @@ class ServiceTest(unittest.TestCase):
         cfg = _config(True)
         object.__setattr__(cfg, "router_login", "admin")
         object.__setattr__(cfg, "router_password", "pw")
-        service = HomeBotService(
+        service = HomeBotUseCase(
             cfg, self.store, self.transport, self.clock,
             devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
         )
@@ -301,7 +301,7 @@ class ServiceTest(unittest.TestCase):
         cfg = _config(True)
         object.__setattr__(cfg, "router_login", "admin")
         object.__setattr__(cfg, "router_password", "pw")
-        service = HomeBotService(
+        service = HomeBotUseCase(
             cfg, self.store, self.transport, self.clock,
             devices=self.registry, inbox=self.inbox, router_client=FakeRouter(),
         )
@@ -355,7 +355,7 @@ class ServiceTest(unittest.TestCase):
             def send_message(self, *args, **kwargs):
                 raise RuntimeError("network down")
 
-        failing = HomeBotService(_config(True), self.store, Failing(), self.clock)
+        failing = HomeBotUseCase(_config(True), self.store, Failing(), self.clock)
         failing.handle_command({"text": "/status", "chat": {"id": 42}})
         pending = self.store.undelivered()
         self.assertEqual(len(pending), 1)

@@ -5,10 +5,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from .config import Config
-from .router_crypto import aes_cbc_decrypt, aes_cbc_encrypt
-
-KEY = b"jiuzhou99jiuzhou"
+from homebot.config import Config
+from .router_crypto import KEY, aes_cbc_decrypt, aes_cbc_encrypt
 
 # Имена из админки роутера записываются через дефис; пользователю удобнее читать с пробелами.
 PRETTY_NAMES = {

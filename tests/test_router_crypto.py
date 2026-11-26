@@ -1,7 +1,7 @@
 # PURPOSE: тесты AES-CBC для API роутера по известным векторам.
 import unittest
 
-from homebot.router_crypto import aes_cbc_decrypt, aes_cbc_encrypt, encrypt_block
+from homebot.infrastructure.router_crypto import aes_cbc_decrypt, aes_cbc_encrypt, encrypt_block
 
 
 class RouterCryptoTest(unittest.TestCase):

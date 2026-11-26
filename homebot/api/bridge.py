@@ -5,9 +5,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Mapping
 from urllib.parse import parse_qs, urlparse
 
-from .config import Config
-from .models import Ask, Event
-from .service import HomeBotService
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.config import Config
+from homebot.domain.models import Ask, Event
 
 MAX_BODY_BYTES = 65536
 
@@ -66,7 +66,7 @@ def read_json_body(handler: BaseHTTPRequestHandler, max_bytes: int = MAX_BODY_BY
 
 
 def make_server(
-    config: Config, service: HomeBotService, port: int | None = None
+    config: Config, service: HomeBotUseCase, port: int | None = None
 ) -> ThreadingHTTPServer:
     api_key = config.api_key
 

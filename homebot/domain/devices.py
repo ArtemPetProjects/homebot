@@ -1,4 +1,4 @@
-# PURPOSE: локальный реестр подписей устройств домашней сети.
+# PURPOSE: домен устройств: value object Device и реестр подписей DeviceRegistry. Не зависит от инфраструктуры.
 import json
 import os
 import threading
@@ -7,7 +7,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from .network import Device, _normalize_mac
+
+@dataclass(frozen=True)
+class Device:
+    """Наблюдаемое устройство домашней сети (доменный value object)."""
+
+    ip: str
+    mac: str
+    hostname: str | None
+    alive: bool = True
+    known: bool = False
+    label: str = ""
+    source: str = "discovered"
+    connected: bool = True
+    last_seen: float = 0.0
+
+
+def normalize_mac(mac: str) -> str:
+    """Привести MAC к нижнему регистру с разделителем ':' — доменное правило идентификации."""
+    return mac.replace("-", ":").lower()
 
 
 @dataclass(frozen=True)
@@ -78,7 +96,7 @@ class DeviceRegistry:
         router_snapshot = datetime.datetime(2026, 11, 23, 13, 41).timestamp()
         changed = False
         for ip, mac, label, connected in defaults:
-            known_mac = _normalize_mac(mac) if mac else ""
+            known_mac = normalize_mac(mac) if mac else ""
             key = known_mac or ("ip:" + ip if ip else "mac:unknown")
             existing_key = None
             for row_key, row in self._rows.items():
@@ -129,7 +147,7 @@ class DeviceRegistry:
     def known(self, ip_or_mac: str) -> DeviceInfo | None:
         if not ip_or_mac:
             return None
-        key = _normalize_mac(ip_or_mac)
+        key = normalize_mac(ip_or_mac)
         with self._lock:
             for data in self._rows.values():
                 info = DeviceInfo.from_dict(data)
@@ -148,7 +166,7 @@ class DeviceRegistry:
         connected: bool = True,
         last_seen: float | None = None,
     ) -> DeviceInfo:
-        key = _normalize_mac(mac) or f"ip:{ip}"
+        key = normalize_mac(mac) or f"ip:{ip}"
         with self._lock:
             existing = self._rows.get(key)
             if existing and DeviceInfo.from_dict(existing).source == "user" and source != "user":
@@ -232,7 +250,7 @@ class DeviceRegistry:
         seen = set()
         with self._lock:
             for device in devices:
-                key = _normalize_mac(device.mac) or f"ip:{device.ip}"
+                key = normalize_mac(device.mac) or f"ip:{device.ip}"
                 seen.add(key)
                 row = self._rows.get(key)
                 if row is None:

@@ -6,8 +6,8 @@ import unittest
 import urllib.error
 
 from homebot.config import Config
-from homebot.models import Event, PendingAsk
-from homebot.telegram import (
+from homebot.domain.models import Event, PendingAsk
+from homebot.infrastructure.telegram import (
     FakeTelegramTransport,
     HttpTelegramTransport,
     build_inline_keyboard,

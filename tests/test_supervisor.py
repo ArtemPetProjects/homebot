@@ -3,7 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import homebot.supervisor as supervisor
+import homebot.api.supervisor as supervisor
 
 
 class FakeStop:

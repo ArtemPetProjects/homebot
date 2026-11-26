@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from homebot.devices import Device, DeviceRegistry
+from homebot.domain.devices import Device, DeviceRegistry
 
 
 class DevicesTest(unittest.TestCase):

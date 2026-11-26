@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from homebot.inbox import Inbox
+from homebot.infrastructure.inbox import Inbox
 
 
 class InboxTest(unittest.TestCase):

@@ -1,4 +1,4 @@
-# PURPOSE: типы событий, запросов и ответов home bot.
+# PURPOSE: доменные модели HomeBot: события, запросы, ответы. value objects и entities без зависимостей от инфраструктуры.
 from dataclasses import dataclass
 from typing import Any
 

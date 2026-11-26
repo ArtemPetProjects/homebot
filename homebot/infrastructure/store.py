@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from .models import Answer, PendingAsk
+from homebot.domain.models import Answer, PendingAsk
 
 
 class Store:

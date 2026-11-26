@@ -3,8 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from homebot.models import Answer, PendingAsk
-from homebot.store import Store
+from homebot.domain.models import Answer, PendingAsk
+from homebot.infrastructure.store import Store
 
 
 class StoreTest(unittest.TestCase):

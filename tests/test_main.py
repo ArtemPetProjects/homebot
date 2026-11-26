@@ -4,7 +4,7 @@ import time
 import unittest
 from types import SimpleNamespace
 
-from homebot.main import make_stop_handler
+from homebot.api.main import make_stop_handler
 
 
 class _Server:

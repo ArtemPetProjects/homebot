@@ -3,10 +3,10 @@ import logging
 import threading
 from typing import Any, Callable
 
-from .config import Config
-from .service import HomeBotService
-from .store import Store
-from .telegram import TelegramTransport
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.config import Config
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import TelegramTransport
 
 logger = logging.getLogger("homebot.poller")
 
@@ -14,7 +14,7 @@ logger = logging.getLogger("homebot.poller")
 class Poller:
     def __init__(
         self,
-        service: HomeBotService,
+        service: HomeBotUseCase,
         transport: TelegramTransport,
         store: Store,
         config: Config,

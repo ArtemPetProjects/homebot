@@ -3,9 +3,9 @@ import threading
 import unittest
 from types import SimpleNamespace
 
-import homebot.tray as tray_module
+import homebot.api.tray as tray_module
 from homebot.config import Config
-from homebot.tray import WM_STATUS, FakeTrayApi, TrayController
+from homebot.api.tray import WM_STATUS, FakeTrayApi, TrayController
 
 
 class _Server:

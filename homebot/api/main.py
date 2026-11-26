@@ -9,12 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from .bridge import make_server
-from .config import Config, load_config
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.config import Config, load_config
+from homebot.infrastructure.network import NetworkDeviceScanner
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import (
+    FakeTelegramTransport,
+    HttpTelegramTransport,
+    TelegramTransport,
+)
+
 from .poller import Poller
-from .service import HomeBotService
-from .store import Store
 from .supervisor import run_supervisor
-from .telegram import FakeTelegramTransport, HttpTelegramTransport, TelegramTransport
 
 logger = logging.getLogger("homebot")
 
@@ -24,7 +30,7 @@ class Runtime:
     config: Config
     store: Store
     transport: TelegramTransport
-    service: HomeBotService
+    service: HomeBotUseCase
     server: Any
     poller: Poller
     stop_event: threading.Event
@@ -64,7 +70,10 @@ def build_runtime(
             if not config.send_enabled
             else HttpTelegramTransport(config)
         )
-    service = HomeBotService(config, store, transport, clock)
+    # Композиция: конкретные адаптеры впрыскиваются в use case только здесь.
+    service = HomeBotUseCase(
+        config, store, transport, clock, device_scanner=NetworkDeviceScanner()
+    )
     # Недоставленные события повторяются при старте, но только при включённой отправке.
     if config.send_enabled:
         service.drain_outbox()

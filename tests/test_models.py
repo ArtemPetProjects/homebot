@@ -1,7 +1,7 @@
 # PURPOSE: тесты ограничений модели запроса подтверждения.
 import unittest
 
-from homebot.models import Ask
+from homebot.domain.models import Ask
 
 
 class ModelsTest(unittest.TestCase):

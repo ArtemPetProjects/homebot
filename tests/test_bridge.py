@@ -7,12 +7,12 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from homebot.bridge import make_server
+from homebot.api.bridge import make_server
 from homebot.config import Config
-from homebot.models import Ask
-from homebot.service import HomeBotService
-from homebot.store import Store
-from homebot.telegram import FakeTelegramTransport
+from homebot.domain.models import Ask
+from homebot.application.use_cases import HomeBotUseCase
+from homebot.infrastructure.store import Store
+from homebot.infrastructure.telegram import FakeTelegramTransport
 
 
 class BridgeTest(unittest.TestCase):
@@ -29,7 +29,7 @@ class BridgeTest(unittest.TestCase):
             ask_ttl_minutes=30,
         )
         store = Store(Path(self.tmp.name), clock=lambda: 1000.0)
-        self.service = HomeBotService(
+        self.service = HomeBotUseCase(
             self.config, store, FakeTelegramTransport(), lambda: 1000.0
         )
         self.server = make_server(self.config, self.service, port=0)

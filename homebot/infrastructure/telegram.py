@@ -1,4 +1,4 @@
-# PURPOSE: транспорт Telegram, короткие callback-токены и маскирование секретов.
+# PURPOSE: инфраструктурный адаптер Telegram: транспорт, callback-токены и маскирование секретов.
 import hashlib
 import json
 import logging
@@ -7,8 +7,8 @@ import urllib.error
 import urllib.request
 from typing import Any, Callable, Protocol
 
-from .config import Config
-from .models import Event, PendingAsk
+from homebot.config import Config
+from homebot.domain.models import Event, PendingAsk
 
 logger = logging.getLogger("homebot.telegram")
 

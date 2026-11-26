@@ -1,4 +1,4 @@
-# PURPOSE: чтение ARP и активный ping-обзор устройств домашней сети.
+# PURPOSE: инфраструктурный адаптер: чтение ARP и активный ping-обзор устройств домашней сети.
 import ipaddress
 import os
 import re
@@ -8,42 +8,19 @@ import struct
 import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from typing import Callable
+
+from homebot.domain.devices import Device
 
 ARP_LINE = re.compile(
     r"^\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5})\s+(\w+)"
 )
 
 
-@dataclass(frozen=True)
-class Device:
-    ip: str
-    mac: str
-    hostname: str | None
-    alive: bool = True
-    known: bool = False
-    label: str = ""
-    source: str = "discovered"
-    connected: bool = True
-    last_seen: float = 0.0
-
-
-def _normalize_mac(mac: str) -> str:
-    return mac.replace("-", ":").lower()
-
-
 def _is_unicast_mac(mac: str) -> bool:
     first = mac.replace(":", "-").split("-")[0]
     try:
         return not (int(first, 16) & 1)
-    except ValueError:
-        return False
-
-
-def _ip_in_subnet(ip: str, subnet: str) -> bool:
-    try:
-        return ipaddress.ip_address(ip) in ipaddress.ip_network(subnet, strict=False)
     except ValueError:
         return False
 
@@ -129,6 +106,29 @@ def ping_probe(ip: str, timeout: float = 0.2) -> bool:
         return False
 
 
+class NetworkDeviceScanner:
+    """Адаптер сканирования сети: реализует порт DeviceScanner для application."""
+
+    def __init__(
+        self,
+        arp_provider: Callable[[], str] | None = None,
+        resolver: Callable[[str], str | None] | None = None,
+        probe: Callable[[str], bool] | None = None,
+    ):
+        self.arp_provider = arp_provider
+        self.resolver = resolver
+        self.probe = probe
+
+    def scan(self, subnet: str, timeout: float = 0.12) -> list[Device]:
+        return scan_network(
+            subnet,
+            arp_provider=self.arp_provider,
+            resolver=self.resolver,
+            timeout=timeout,
+            probe=self.probe,
+        )
+
+
 def scan_network(
     subnet: str,
     arp_provider: Callable[[], str] | None = None,
@@ -147,7 +147,6 @@ def scan_network(
             return result.stdout
 
     if resolver is None:
-        import socket
 
         def resolver(ip: str) -> str | None:  # noqa: F811
             try:

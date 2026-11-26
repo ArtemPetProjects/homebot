@@ -5,7 +5,8 @@ import threading
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from .config import Config, load_config
+from homebot.config import Config, load_config
+
 from .main import build_runtime
 
 logger = logging.getLogger("homebot.tray")
